@@ -38782,6 +38782,25 @@ var ClientCrdtManager = class {
       }
     }
   }
+  async resetDoc(filePath) {
+    console.log(`[VaultSync/CRDT] Resetting CRDT state for ${filePath}`);
+    this.releaseDoc(filePath);
+    try {
+      await new Promise((resolve2, reject2) => {
+        const request = indexedDB.deleteDatabase(filePath);
+        request.onsuccess = () => resolve2();
+        request.onerror = () => reject2(request.error);
+        request.onblocked = () => {
+          console.warn(`[VaultSync/CRDT] IndexedDB delete blocked for ${filePath}`);
+          resolve2();
+        };
+      });
+      console.log(`[VaultSync/CRDT] IndexedDB cleared for ${filePath}`);
+    } catch (err) {
+      console.error(`[VaultSync/CRDT] Failed to clear IndexedDB for ${filePath}:`, err);
+    }
+    await this.getDoc(filePath);
+  }
   updateLru(filePath) {
     this.lru = this.lru.filter((p) => p !== filePath);
     this.lru.push(filePath);
@@ -39496,11 +39515,6 @@ var yCollab = (ytext, awareness, { undoManager = new UndoManager(ytext) } = {}) 
   return plugins;
 };
 
-// src/ui/editor/collab.ts
-function createYCollabExtension(ytext, awareness) {
-  return yCollab(ytext, awareness);
-}
-
 // src/main.ts
 var import_state = require("@codemirror/state");
 var DEFAULT_SETTINGS = {
@@ -39590,6 +39604,18 @@ var VaultSyncPlugin = class extends import_obsidian5.Plugin {
         return false;
       }
     });
+    this.addCommand({
+      id: "reset-crdt",
+      name: "Reset CRDT State (Clear Local Cache)",
+      callback: async () => {
+        const file = this.app.workspace.getActiveFile();
+        if (file) {
+          await this.crdtManager.resetDoc(file.path);
+          new import_obsidian5.Notice(`CRDT state reset for ${file.name}. Reloading...`);
+          await this.updateCollabExtension(file);
+        }
+      }
+    });
     console.log("Vault Sync Plugin: Successfully loaded.");
   }
   async onunload() {
@@ -39633,14 +39659,18 @@ var VaultSyncPlugin = class extends import_obsidian5.Plugin {
     const text2 = doc2.getText("content");
     if (awareness) {
       console.log(`[VaultSync/WebRTC] Preparing yCollab for ${file.path} (text length: ${text2.length})`);
+      text2.observe((event) => {
+        console.log(`[VaultSync/CRDT] Y.Text observed change in ${file.path}  local=${event.transaction.local}`);
+      });
       let found = false;
       this.app.workspace.iterateAllLeaves((leaf) => {
         var _a;
         if (leaf.view instanceof import_obsidian5.MarkdownView && leaf.view.file === file) {
           const editor = leaf.view.editor.cm || ((_a = leaf.view.sourceMode) == null ? void 0 : _a.cmEditor) || leaf.view.editorView;
           if (editor && typeof editor.dispatch === "function") {
+            const undoManager = new UndoManager(text2);
             editor.dispatch({
-              effects: this.collabCompartment.reconfigure(createYCollabExtension(text2, awareness))
+              effects: this.collabCompartment.reconfigure(yCollab(text2, awareness, { undoManager }))
             });
             console.log(`[VaultSync/WebRTC] Applied yCollab to editor for ${file.path}`);
             found = true;
