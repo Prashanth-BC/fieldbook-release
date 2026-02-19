@@ -1,0 +1,10 @@
+{
+  "id": "fieldbook-vault-sync",
+  "name": "Vault Sync (TypeScript)",
+  "version": "0.1.0",
+  "minAppVersion": "0.15.0",
+  "description": "Real-time CRDT sync with Git transport for Obsidian.",
+  "author": "Obsidian Vault Sync Team",
+  "authorUrl": "https://github.com/obsidian-vault-sync",
+  "isDesktopOnly": false
+}

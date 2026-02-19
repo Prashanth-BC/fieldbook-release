@@ -1,0 +1,65 @@
+/* client/styles.css */
+.vault-sync-status-bar.is-syncing .status-bar-item-icon {
+    color: var(--text-accent);
+}
+
+.vault-sync-status-bar.is-synced .status-bar-item-icon {
+    color: var(--text-success);
+}
+
+.vault-sync-status-bar.is-error .status-bar-item-icon {
+    color: var(--text-error);
+}
+
+.vault-sync-status-bar.is-offline .status-bar-item-icon {
+    color: var(--text-muted);
+}
+
+.vault-sync-required-field {
+    border: 1px solid var(--text-error);
+    border-radius: 4px;
+    padding: 4px;
+    background-color: rgba(var(--text-error-rgb), 0.1);
+}
+
+.vault-sync-required-field::after {
+    content: "Required";
+    color: var(--text-error);
+    font-size: 0.8em;
+    font-weight: bold;
+    margin-left: 10px;
+}
+
+.vault-sync-onboarding-card {
+    background-color: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 24px;
+}
+
+.vault-sync-checklist {
+    margin: 16px 0;
+}
+
+.vault-sync-checklist-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    color: var(--text-muted);
+}
+
+.vault-sync-checklist-item.is-done {
+    color: var(--text-success);
+}
+
+.vault-sync-checklist-item .checkbox {
+    font-weight: bold;
+}
+
+.vault-sync-success {
+    margin-top: 16px;
+    color: var(--text-success);
+    font-weight: bold;
+}
