@@ -2,7 +2,7 @@
 # install-server.sh
 
 BINARY_NAME="vault-sync-hub"
-REPO_URL="https://raw.githubusercontent.com/Prashanth-BC/fieldbook-release/main/common/server"
+REPO_URL="https://raw.githubusercontent.com/Prashanth-BC/fieldbook-release/main/real-sync/server"
 
 echo "Installing Vault Sync Hub Server..."
 

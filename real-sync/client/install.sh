@@ -2,7 +2,7 @@
 # install-client.sh
 
 PLUGIN_ID="fieldbook-vault-sync"
-REPO_URL="https://raw.githubusercontent.com/Prashanth-BC/fieldbook-release/main/common/client"
+REPO_URL="https://raw.githubusercontent.com/Prashanth-BC/fieldbook-release/main/real-sync/client"
 
 echo "Installing Vault Sync Obsidian Plugin..."
 
