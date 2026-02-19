@@ -38614,6 +38614,7 @@ var ClientCrdtManager = class {
     __publicField(this, "awareness", /* @__PURE__ */ new Map());
     __publicField(this, "lru", []);
     __publicField(this, "materializing", /* @__PURE__ */ new Set());
+    __publicField(this, "debounceTimers", /* @__PURE__ */ new Map());
     __publicField(this, "MAX_DOCS", 50);
     this.plugin = plugin;
   }
@@ -38637,12 +38638,12 @@ var ClientCrdtManager = class {
     awareness.on("update", ({ added, updated, removed }) => {
       var _a;
       const states = awareness.getStates();
-      let from2 = "Unknown";
-      const clientId = added[0] || updated[0];
-      if (clientId) {
-        const state = states.get(clientId);
-        if ((_a = state == null ? void 0 : state.user) == null ? void 0 : _a.name) {
-          from2 = state.user.name;
+      let from2 = "Unknown Device";
+      const remoteId = added[0] || updated[0];
+      if (remoteId) {
+        const remoteState = states.get(remoteId);
+        if ((_a = remoteState == null ? void 0 : remoteState.user) == null ? void 0 : _a.name) {
+          from2 = remoteState.user.name;
         }
       }
       console.log(`[VaultSync/WebRTC] Awareness update received  path=${filePath}  from=${from2}  clients=${states.size}`);
@@ -38651,8 +38652,8 @@ var ClientCrdtManager = class {
       }
     });
     doc2.on("update", (update, origin) => {
-      if (origin !== "local-file-sync") {
-        this.materializeToFile(filePath, doc2);
+      if (origin !== "local-file-sync" && !this.plugin.isFileOpen(filePath)) {
+        this.debouncedMaterialize(filePath, doc2);
       }
     });
     const persistence = new IndexeddbPersistence(filePath, doc2);
@@ -38693,27 +38694,30 @@ var ClientCrdtManager = class {
     }
   }
   async updateCrdtFromFile(filePath, content) {
+    if (this.plugin.isFileOpen(filePath))
+      return;
     if (this.materializing.has(filePath))
       return;
     const doc2 = await this.getDoc(filePath);
     doc2.transact(() => {
       if (filePath.endsWith(".md")) {
         const text2 = doc2.getText("content");
-        const oldContent = text2.toString();
-        if (oldContent !== content) {
+        const currentText = text2.toString().replace(/\r\n/g, "\n");
+        const normalizedContent = content.replace(/\r\n/g, "\n");
+        if (currentText !== normalizedContent) {
           let i = 0;
-          while (i < oldContent.length && i < content.length && oldContent[i] === content[i]) {
+          while (i < currentText.length && i < normalizedContent.length && currentText[i] === normalizedContent[i]) {
             i++;
           }
           let j = 0;
-          while (j < oldContent.length - i && j < content.length - i && oldContent[oldContent.length - 1 - j] === content[content.length - 1 - j]) {
+          while (j < currentText.length - i && j < normalizedContent.length - i && currentText[currentText.length - 1 - j] === normalizedContent[normalizedContent.length - 1 - j]) {
             j++;
           }
-          if (oldContent.length > i + j) {
-            text2.delete(i, oldContent.length - i - j);
+          if (currentText.length > i + j) {
+            text2.delete(i, currentText.length - i - j);
           }
-          if (content.length > i + j) {
-            text2.insert(i, content.substring(i, content.length - j));
+          if (normalizedContent.length > i + j) {
+            text2.insert(i, normalizedContent.substring(i, normalizedContent.length - j));
           }
         }
       } else {
@@ -38729,7 +38733,19 @@ var ClientCrdtManager = class {
       }
     }, "local-file-sync");
   }
+  debouncedMaterialize(filePath, doc2) {
+    if (this.debounceTimers.has(filePath)) {
+      clearTimeout(this.debounceTimers.get(filePath));
+    }
+    const timer = setTimeout(() => {
+      this.materializeToFile(filePath, doc2);
+      this.debounceTimers.delete(filePath);
+    }, 1e3);
+    this.debounceTimers.set(filePath, timer);
+  }
   async materializeToFile(filePath, doc2) {
+    if (this.plugin.isFileOpen(filePath))
+      return;
     const file = this.plugin.app.vault.getAbstractFileByPath(filePath);
     if (!(file instanceof import_obsidian3.TFile))
       return;
@@ -38740,13 +38756,17 @@ var ClientCrdtManager = class {
       newContent = JSON.stringify(doc2.getMap("data").toJSON(), null, 2);
     }
     const currentContent = await this.plugin.app.vault.read(file);
-    if (currentContent !== newContent) {
+    const normalizedCurrent = currentContent.replace(/\r\n/g, "\n");
+    const normalizedNew = newContent.replace(/\r\n/g, "\n");
+    if (normalizedCurrent !== normalizedNew) {
       this.materializing.add(filePath);
       try {
         await this.plugin.app.vault.modify(file, newContent);
-        console.log(`[CRDT] Materialized changes to file: ${filePath}`);
+        console.log(`[VaultSync/CRDT] Materialized remote changes to file: ${filePath}`);
+      } catch (err) {
+        console.error(`[VaultSync/CRDT] Failed to materialize ${filePath}:`, err);
       } finally {
-        setTimeout(() => this.materializing.delete(filePath), 100);
+        setTimeout(() => this.materializing.delete(filePath), 500);
       }
     }
   }
@@ -39580,6 +39600,16 @@ var VaultSyncPlugin = class extends import_obsidian5.Plugin {
     var _a;
     this.syncState = state;
     (_a = this.statusBar) == null ? void 0 : _a.update(state);
+  }
+  isFileOpen(filePath) {
+    let open = false;
+    this.app.workspace.iterateAllLeaves((leaf) => {
+      var _a;
+      if (leaf.view instanceof import_obsidian5.MarkdownView && ((_a = leaf.view.file) == null ? void 0 : _a.path) === filePath) {
+        open = true;
+      }
+    });
+    return open;
   }
   isEditable(file) {
     const ext = file.extension.toLowerCase();
