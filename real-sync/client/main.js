@@ -38635,20 +38635,31 @@ var ClientCrdtManager = class {
       color: getStableColor(deviceId)
     });
     console.log(`[VaultSync/WebRTC] Awareness created  path=${filePath}`);
+    const activeClients = /* @__PURE__ */ new Set();
     awareness.on("update", ({ added, updated, removed }) => {
-      var _a;
       const states = awareness.getStates();
-      let from2 = "Unknown Device";
-      const remoteId = added[0] || updated[0];
-      if (remoteId) {
-        const remoteState = states.get(remoteId);
-        if ((_a = remoteState == null ? void 0 : remoteState.user) == null ? void 0 : _a.name) {
-          from2 = remoteState.user.name;
+      if (removed.length > 0) {
+        let disconnectedCount = 0;
+        for (const id2 of removed) {
+          if (activeClients.has(id2)) {
+            activeClients.delete(id2);
+            disconnectedCount++;
+          }
+        }
+        if (disconnectedCount > 0) {
+          console.log(`[VaultSync/WebRTC] Awareness cleared  path=${filePath}  reason=peer_disconnect  remaining=${activeClients.size}`);
         }
       }
-      console.log(`[VaultSync/WebRTC] Awareness update received  path=${filePath}  from=${from2}  clients=${states.size}`);
-      if (removed.length > 0) {
-        console.log(`[VaultSync/WebRTC] Awareness cleared  path=${filePath}  reason=peer_disconnect`);
+      const allAddedOrUpdated = [...added, ...updated];
+      for (const id2 of allAddedOrUpdated) {
+        const state = states.get(id2);
+        if (state == null ? void 0 : state.user) {
+          const isNew = !activeClients.has(id2);
+          activeClients.add(id2);
+          if (isNew) {
+            console.log(`[VaultSync/WebRTC] Peer joined  path=${filePath}  from=${state.user.name || "Unknown"}  clients=${states.size}`);
+          }
+        }
       }
     });
     doc2.on("update", (update, origin) => {
