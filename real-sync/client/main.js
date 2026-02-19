@@ -38681,8 +38681,8 @@ var ClientCrdtManager = class {
       });
       this.providers.set(filePath, provider);
       provider.on("status", (event) => {
-        const status = event.status || event;
-        console.log(`[VaultSync/WebRTC] Status for ${filePath}: ${status}`);
+        const status = event.status || (typeof event === "string" ? event : JSON.stringify(event));
+        console.log(`[VaultSync/WebRTC] Status for ${filePath}:`, event);
       });
       console.log(`[VaultSync/WebRTC] Provider created  room=${roomName}`);
     }
@@ -38778,7 +38778,7 @@ var ClientCrdtManager = class {
       } catch (err) {
         console.error(`[VaultSync/CRDT] Failed to materialize ${filePath}:`, err);
       } finally {
-        setTimeout(() => this.materializing.delete(filePath), 500);
+        setTimeout(() => this.materializing.delete(filePath), 1e3);
       }
     }
   }
@@ -39632,17 +39632,24 @@ var VaultSyncPlugin = class extends import_obsidian5.Plugin {
     const awareness = this.crdtManager.getAwareness(file.path);
     const text2 = doc2.getText("content");
     if (awareness) {
+      console.log(`[VaultSync/WebRTC] Preparing yCollab for ${file.path} (text length: ${text2.length})`);
+      let found = false;
       this.app.workspace.iterateAllLeaves((leaf) => {
+        var _a;
         if (leaf.view instanceof import_obsidian5.MarkdownView && leaf.view.file === file) {
-          const editor = leaf.view.editor.cm;
-          if (editor) {
+          const editor = leaf.view.editor.cm || ((_a = leaf.view.sourceMode) == null ? void 0 : _a.cmEditor) || leaf.view.editorView;
+          if (editor && typeof editor.dispatch === "function") {
             editor.dispatch({
               effects: this.collabCompartment.reconfigure(createYCollabExtension(text2, awareness))
             });
             console.log(`[VaultSync/WebRTC] Applied yCollab to editor for ${file.path}`);
+            found = true;
           }
         }
       });
+      if (!found) {
+        console.warn(`[VaultSync/WebRTC] Could not find active CM6 editor for ${file.path}`);
+      }
     }
   }
   async rebuildCrdt(file) {
