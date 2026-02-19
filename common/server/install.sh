@@ -1,23 +1,19 @@
 #!/bin/bash
-# install-server.sh (Manual Run Version)
+# install-server.sh
 
 BINARY_NAME="vault-sync-hub"
+REPO_URL="https://raw.githubusercontent.com/Prashanth-BC/fieldbook-release/main/common/server"
 
-echo "Preparing Vault Sync Hub Server for manual run..."
+echo "Installing Vault Sync Hub Server..."
 
-# 1. Ensure binary exists
+# 1. Download if missing
 if [ ! -f "$BINARY_NAME" ]; then
-    echo "Error: Binary $BINARY_NAME not found in current directory."
-    exit 1
+    echo "Downloading binary..."
+    curl -sSL "$REPO_URL/$BINARY_NAME" -o "$BINARY_NAME"
 fi
 
 # 2. Make executable
 chmod +x "$BINARY_NAME"
 
 echo "Success! The server is ready."
-echo ""
-echo "To start the server manually, run:"
-echo "./$BINARY_NAME"
-echo ""
-echo "Note: You can set environment variables for secrets if needed:"
-echo "PORT=8080 VAULT_SECRET_MYVAULT=my-secret ./$BINARY_NAME"
+echo "To start: ./$BINARY_NAME"
