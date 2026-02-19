@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "minAppVersion": "0.15.0",
   "description": "Real-time CRDT sync with Git transport for Obsidian.",
-  "author": "Obsidian Vault Sync Team",
+  "author": "Prashanth Bhagyalakshmi Chamegowda",
   "authorUrl": "https://github.com/obsidian-vault-sync",
   "isDesktopOnly": false
 }
