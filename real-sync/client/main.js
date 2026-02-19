@@ -38613,6 +38613,7 @@ var ClientCrdtManager = class {
     __publicField(this, "providers", /* @__PURE__ */ new Map());
     __publicField(this, "awareness", /* @__PURE__ */ new Map());
     __publicField(this, "lru", []);
+    __publicField(this, "materializing", /* @__PURE__ */ new Set());
     __publicField(this, "MAX_DOCS", 50);
     this.plugin = plugin;
   }
@@ -38647,6 +38648,11 @@ var ClientCrdtManager = class {
       console.log(`[VaultSync/WebRTC] Awareness update received  path=${filePath}  from=${from2}  clients=${states.size}`);
       if (removed.length > 0) {
         console.log(`[VaultSync/WebRTC] Awareness cleared  path=${filePath}  reason=peer_disconnect`);
+      }
+    });
+    doc2.on("update", (update, origin) => {
+      if (origin !== "local-file-sync") {
+        this.materializeToFile(filePath, doc2);
       }
     });
     const persistence = new IndexeddbPersistence(filePath, doc2);
@@ -38687,13 +38693,28 @@ var ClientCrdtManager = class {
     }
   }
   async updateCrdtFromFile(filePath, content) {
+    if (this.materializing.has(filePath))
+      return;
     const doc2 = await this.getDoc(filePath);
     doc2.transact(() => {
       if (filePath.endsWith(".md")) {
         const text2 = doc2.getText("content");
-        if (text2.toString() !== content) {
-          text2.delete(0, text2.length);
-          text2.insert(0, content);
+        const oldContent = text2.toString();
+        if (oldContent !== content) {
+          let i = 0;
+          while (i < oldContent.length && i < content.length && oldContent[i] === content[i]) {
+            i++;
+          }
+          let j = 0;
+          while (j < oldContent.length - i && j < content.length - i && oldContent[oldContent.length - 1 - j] === content[content.length - 1 - j]) {
+            j++;
+          }
+          if (oldContent.length > i + j) {
+            text2.delete(i, oldContent.length - i - j);
+          }
+          if (content.length > i + j) {
+            text2.insert(i, content.substring(i, content.length - j));
+          }
         }
       } else {
         try {
@@ -38720,8 +38741,13 @@ var ClientCrdtManager = class {
     }
     const currentContent = await this.plugin.app.vault.read(file);
     if (currentContent !== newContent) {
-      await this.plugin.app.vault.modify(file, newContent);
-      console.log(`[CRDT] Materialized changes to file: ${filePath}`);
+      this.materializing.add(filePath);
+      try {
+        await this.plugin.app.vault.modify(file, newContent);
+        console.log(`[CRDT] Materialized changes to file: ${filePath}`);
+      } finally {
+        setTimeout(() => this.materializing.delete(filePath), 100);
+      }
     }
   }
   updateLru(filePath) {
