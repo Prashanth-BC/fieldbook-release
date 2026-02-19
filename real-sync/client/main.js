@@ -39670,9 +39670,12 @@ var VaultSyncPlugin = class extends import_obsidian5.Plugin {
           if (editor && typeof editor.dispatch === "function") {
             const undoManager = new UndoManager(text2);
             editor.dispatch({
+              effects: this.collabCompartment.reconfigure([])
+            });
+            editor.dispatch({
               effects: this.collabCompartment.reconfigure(yCollab(text2, awareness, { undoManager }))
             });
-            console.log(`[VaultSync/WebRTC] Applied yCollab to editor for ${file.path}`);
+            console.log(`[VaultSync/WebRTC] Applied yCollab to editor for ${file.path}. Content snippet: "${text2.toString().substring(0, 50)}..."`);
             found = true;
           }
         }
