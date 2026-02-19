@@ -38633,6 +38633,22 @@ var ClientCrdtManager = class {
       color: getStableColor(deviceId)
     });
     console.log(`[VaultSync/WebRTC] Awareness created  path=${filePath}`);
+    awareness.on("update", ({ added, updated, removed }) => {
+      var _a;
+      const states = awareness.getStates();
+      let from2 = "Unknown";
+      const clientId = added[0] || updated[0];
+      if (clientId) {
+        const state = states.get(clientId);
+        if ((_a = state == null ? void 0 : state.user) == null ? void 0 : _a.name) {
+          from2 = state.user.name;
+        }
+      }
+      console.log(`[VaultSync/WebRTC] Awareness update received  path=${filePath}  from=${from2}  clients=${states.size}`);
+      if (removed.length > 0) {
+        console.log(`[VaultSync/WebRTC] Awareness cleared  path=${filePath}  reason=peer_disconnect`);
+      }
+    });
     const persistence = new IndexeddbPersistence(filePath, doc2);
     this.persistence.set(filePath, persistence);
     const signalingUrl = this.plugin.signalingManager.getSignalingUrl();
@@ -39422,6 +39438,11 @@ var yCollab = (ytext, awareness, { undoManager = new UndoManager(ytext) } = {}) 
   return plugins;
 };
 
+// src/ui/editor/collab.ts
+function createYCollabExtension(ytext, awareness) {
+  return yCollab(ytext, awareness);
+}
+
 // src/main.ts
 var import_state = require("@codemirror/state");
 var DEFAULT_SETTINGS = {
@@ -39548,7 +39569,7 @@ var VaultSyncPlugin = class extends import_obsidian5.Plugin {
           const editor = leaf.view.editor.cm;
           if (editor) {
             editor.dispatch({
-              effects: this.collabCompartment.reconfigure(yCollab(text2, awareness))
+              effects: this.collabCompartment.reconfigure(createYCollabExtension(text2, awareness))
             });
             console.log(`[VaultSync/WebRTC] Applied yCollab to editor for ${file.path}`);
           }
