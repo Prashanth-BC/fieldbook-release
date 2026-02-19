@@ -38694,8 +38694,6 @@ var ClientCrdtManager = class {
     }
   }
   async updateCrdtFromFile(filePath, content) {
-    if (this.plugin.isFileOpen(filePath))
-      return;
     if (this.materializing.has(filePath))
       return;
     const doc2 = await this.getDoc(filePath);
