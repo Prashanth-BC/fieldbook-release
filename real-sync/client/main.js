@@ -38663,6 +38663,8 @@ var ClientCrdtManager = class {
       }
     });
     doc2.on("update", (update, origin) => {
+      var _a;
+      console.log(`[VaultSync/CRDT] Doc update received  path=${filePath}  bytes=${update.byteLength}  origin=${((_a = origin == null ? void 0 : origin.constructor) == null ? void 0 : _a.name) || typeof origin}`);
       if (origin !== "local-file-sync" && !this.plugin.isFileOpen(filePath)) {
         this.debouncedMaterialize(filePath, doc2);
       }
@@ -38679,7 +38681,8 @@ var ClientCrdtManager = class {
       });
       this.providers.set(filePath, provider);
       provider.on("status", (event) => {
-        console.log(`[VaultSync/WebRTC] Status for ${filePath}: ${event.status}`);
+        const status = event.status || event;
+        console.log(`[VaultSync/WebRTC] Status for ${filePath}: ${status}`);
       });
       console.log(`[VaultSync/WebRTC] Provider created  room=${roomName}`);
     }
