@@ -32023,6 +32023,19 @@ function createVaultFs(adapter) {
         isSymbolicLink: () => false
       };
     },
+    // Missing methods required by isomorphic-git to avoid "Cannot read properties of undefined (reading 'bind')"
+    readlink: async (path2) => {
+      return "";
+    },
+    symlink: async (target2, path2) => {
+      throw new Error("symlink not supported");
+    },
+    chmod: async (path2, mode) => {
+      return;
+    },
+    rm: async (path2) => {
+      await adapter.remove(normalizePath(path2));
+    },
     read: async () => {
       throw new Error("FS.read not implemented");
     },
