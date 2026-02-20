@@ -31949,29 +31949,36 @@ var web_default = index;
 
 // src/git/vault-fs.ts
 function createVaultFs(adapter) {
+  const normalizePath = (path2) => {
+    let p = path2;
+    while (p.startsWith("/"))
+      p = p.substring(1);
+    return p || ".";
+  };
   const fs = {
-    async readFile(path2, options) {
+    readFile: async (path2, options) => {
       try {
-        const data = await adapter.readBinary(this.normalizePath(path2));
+        const data = await adapter.readBinary(normalizePath(path2));
         return new Uint8Array(data);
       } catch (e) {
         throw { code: "ENOENT", message: "File not found" };
       }
     },
-    async writeFile(path2, data, options) {
-      const normalized = this.normalizePath(path2);
+    writeFile: async (path2, data, options) => {
+      const normalized = normalizePath(path2);
       if (typeof data === "string") {
         await adapter.write(normalized, data);
       } else {
-        await adapter.writeBinary(normalized, data.buffer);
+        const buffer = data instanceof Uint8Array ? data.buffer : data;
+        await adapter.writeBinary(normalized, buffer);
       }
     },
-    async unlink(path2) {
-      await adapter.remove(this.normalizePath(path2));
+    unlink: async (path2) => {
+      await adapter.remove(normalizePath(path2));
     },
-    async readdir(path2) {
+    readdir: async (path2) => {
       try {
-        const normalized = this.normalizePath(path2) || ".";
+        const normalized = normalizePath(path2);
         const res = await adapter.list(normalized);
         const all2 = [...res.files, ...res.folders];
         return all2.map((p) => {
@@ -31982,14 +31989,14 @@ function createVaultFs(adapter) {
         throw { code: "ENOENT", message: "Directory not found" };
       }
     },
-    async mkdir(path2) {
-      await adapter.mkdir(this.normalizePath(path2));
+    mkdir: async (path2) => {
+      await adapter.mkdir(normalizePath(path2));
     },
-    async rmdir(path2) {
-      await adapter.remove(this.normalizePath(path2));
+    rmdir: async (path2) => {
+      await adapter.remove(normalizePath(path2));
     },
-    async stat(path2) {
-      const s = await adapter.stat(this.normalizePath(path2));
+    stat: async (path2) => {
+      const s = await adapter.stat(normalizePath(path2));
       if (!s) {
         throw { code: "ENOENT" };
       }
@@ -32002,20 +32009,25 @@ function createVaultFs(adapter) {
         isSymbolicLink: () => false
       };
     },
-    async lstat(path2) {
-      return this.stat(path2);
+    lstat: async (path2) => {
+      const s = await adapter.stat(normalizePath(path2));
+      if (!s) {
+        throw { code: "ENOENT" };
+      }
+      return {
+        type: s.type === "folder" ? "directory" : "file",
+        size: s.size,
+        mtimeMs: s.mtime,
+        isDirectory: () => s.type === "folder",
+        isFile: () => s.type === "file",
+        isSymbolicLink: () => false
+      };
     },
-    async read(fd, buffer, offset, length2, position3) {
+    read: async () => {
       throw new Error("FS.read not implemented");
     },
-    async write(fd, buffer, offset, length2, position3) {
+    write: async () => {
       throw new Error("FS.write not implemented");
-    },
-    normalizePath(path2) {
-      let p = path2;
-      while (p.startsWith("/"))
-        p = p.substring(1);
-      return p;
     }
   };
   fs.promises = fs;
@@ -43387,7 +43399,7 @@ var ClientCrdtManager = class {
     });
     doc2.on("update", (update, origin) => {
       var _a;
-      const originName = ((_a = origin == null ? void 0 : origin.constructor) == null ? void 0 : _a.name) || typeof origin;
+      const originName = typeof origin === "string" ? origin : ((_a = origin == null ? void 0 : origin.constructor) == null ? void 0 : _a.name) || typeof origin;
       console.log(`[VaultSync/CRDT] Doc update received  path=${filePath}  bytes=${update.byteLength}  origin=${originName}`);
       if (origin !== "local-file-sync" && origin !== "sync-hub") {
         this.plugin.hubClient.sendUpdate(filePath, update);
@@ -43472,27 +43484,31 @@ var ClientCrdtManager = class {
   async updateCrdtFromFile(filePath, content) {
     if (this.materializing.has(filePath))
       return;
+    if (this.plugin.isFileOpen(filePath))
+      return;
     const doc2 = await this.getDoc(filePath);
     doc2.transact(() => {
       if (filePath.endsWith(".md")) {
         const text2 = doc2.getText("content");
-        const currentText = text2.toString().replace(/\r\n/g, "\n");
-        const normalizedContent = content.replace(/\r\n/g, "\n");
+        const currentText = text2.toString().replace(/\r\n/g, "\n").trim();
+        const normalizedContent = content.replace(/\r\n/g, "\n").trim();
         if (currentText !== normalizedContent) {
-          console.log(`[VaultSync/CRDT] Local file diff detected for ${filePath}. Lengths: doc=${currentText.length} file=${normalizedContent.length}`);
+          console.log(`[VaultSync/CRDT] Background file diff detected for ${filePath}. Lengths (trimmed): doc=${currentText.length} file=${normalizedContent.length}`);
+          const finalContent = content.replace(/\r\n/g, "\n");
+          const unNormalizedText = text2.toString().replace(/\r\n/g, "\n");
           let i = 0;
-          while (i < currentText.length && i < normalizedContent.length && currentText[i] === normalizedContent[i]) {
+          while (i < unNormalizedText.length && i < finalContent.length && unNormalizedText[i] === finalContent[i]) {
             i++;
           }
           let j = 0;
-          while (j < currentText.length - i && j < normalizedContent.length - i && currentText[currentText.length - 1 - j] === normalizedContent[normalizedContent.length - 1 - j]) {
+          while (j < unNormalizedText.length - i && j < finalContent.length - i && unNormalizedText[unNormalizedText.length - 1 - j] === finalContent[finalContent.length - 1 - j]) {
             j++;
           }
-          if (currentText.length > i + j) {
-            text2.delete(i, currentText.length - i - j);
+          if (unNormalizedText.length > i + j) {
+            text2.delete(i, unNormalizedText.length - i - j);
           }
-          if (normalizedContent.length > i + j) {
-            text2.insert(i, normalizedContent.substring(i, normalizedContent.length - j));
+          if (finalContent.length > i + j) {
+            text2.insert(i, finalContent.substring(i, finalContent.length - j));
           }
         }
       } else {
@@ -43531,8 +43547,8 @@ var ClientCrdtManager = class {
       newContent = JSON.stringify(doc2.getMap("data").toJSON(), null, 2);
     }
     const currentContent = await this.plugin.app.vault.read(file);
-    const normalizedCurrent = currentContent.replace(/\r\n/g, "\n");
-    const normalizedNew = newContent.replace(/\r\n/g, "\n");
+    const normalizedCurrent = currentContent.replace(/\r\n/g, "\n").trim();
+    const normalizedNew = newContent.replace(/\r\n/g, "\n").trim();
     if (normalizedCurrent !== normalizedNew) {
       this.materializing.add(filePath);
       try {
