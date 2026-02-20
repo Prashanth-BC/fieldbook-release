@@ -38600,7 +38600,7 @@ var GitUtils = class {
     const dir = ".";
     try {
       console.log(`[VaultSync/Git] Fetching from ${remoteUrl} [${branch}]...`);
-      await git.fetch({
+      const fetchResult = await git.fetch({
         fs,
         http: obsidianHttp,
         dir,
@@ -38610,7 +38610,11 @@ var GitUtils = class {
         onAuth: () => ({ username: token || "" })
       });
       const headSha = await git.resolveRef({ fs, dir, ref: "HEAD" });
-      const fetchHeadSha = await git.resolveRef({ fs, dir, ref: "FETCH_HEAD" });
+      const fetchHeadSha = fetchResult.fetchHead;
+      if (!fetchHeadSha) {
+        console.log("[VaultSync/Git] No remote changes found or already up to date");
+        return;
+      }
       if (headSha === fetchHeadSha) {
         console.log("[VaultSync/Git] Already up to date");
         return;
