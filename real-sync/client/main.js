@@ -16585,7 +16585,7 @@ var require_ignore = __commonJS({
         // Zero, one or several directories
         // should not use '*', or it will be replaced by the next replacer
         // Check if it is not the last `'/**'`
-        (_, index2, str) => index2 + 6 < str.length ? "(?:\\/[^\\/]+)*" : "\\/.+"
+        (_, index, str) => index + 6 < str.length ? "(?:\\/[^\\/]+)*" : "\\/.+"
       ],
       // normal intermediate wildcards
       [
@@ -17505,7 +17505,7 @@ Please file a bug report at https://github.com/isomorphic-git/isomorphic-git/iss
         if (buffer.length === 0) {
           throw new InternalError("Index file is empty (.git/index)");
         }
-        const index3 = new _GitIndex();
+        const index2 = new _GitIndex();
         const reader = new BufferCursor(buffer);
         const magic = reader.toString("utf8", 4);
         if (magic !== "DIRC") {
@@ -17561,10 +17561,10 @@ Please file a bug report at https://github.com/isomorphic-git/isomorphic-git/iss
             }
           }
           entry.stages = [];
-          index3._addEntry(entry);
+          index2._addEntry(entry);
           i++;
         }
-        return index3;
+        return index2;
       }
       get unmergedPaths() {
         return [...this._unmergedPaths];
@@ -17718,8 +17718,8 @@ Please file a bug report at https://github.com/isomorphic-git/isomorphic-git/iss
         fs.lstat(filepath),
         fs.read(filepath)
       ]);
-      const index3 = await GitIndex.from(rawIndexFile);
-      cache.map.set(filepath, index3);
+      const index2 = await GitIndex.from(rawIndexFile);
+      cache.map.set(filepath, index2);
       cache.stats.set(filepath, stat);
     }
     async function isIndexStale(fs, filepath, cache) {
@@ -17760,16 +17760,16 @@ Please file a bug report at https://github.com/isomorphic-git/isomorphic-git/iss
           if (await isIndexStale(fs, filepath, theIndexCache)) {
             await updateCachedIndexFile(fs, filepath, theIndexCache);
           }
-          const index3 = theIndexCache.map.get(filepath);
-          unmergedPaths = index3.unmergedPaths;
+          const index2 = theIndexCache.map.get(filepath);
+          unmergedPaths = index2.unmergedPaths;
           if (unmergedPaths.length && !allowUnmerged)
             throw new UnmergedPathsError(unmergedPaths);
-          result = await closure(index3);
-          if (index3._dirty) {
-            const buffer = await index3.toObject();
+          result = await closure(index2);
+          if (index2._dirty) {
+            const buffer = await index2.toObject();
             await fs.write(filepath, buffer);
             theIndexCache.stats.set(filepath, await fs.lstat(filepath));
-            index3._dirty = false;
+            index2._dirty = false;
           }
         });
         return result;
@@ -17850,8 +17850,8 @@ Please file a bug report at https://github.com/isomorphic-git/isomorphic-git/iss
       constructor({ fs, gitdir, cache }) {
         this.treePromise = GitIndexManager.acquire(
           { fs, gitdir, cache },
-          async function(index3) {
-            return flatFileListToDirectoryStructure(index3.entries);
+          async function(index2) {
+            return flatFileListToDirectoryStructure(index2.entries);
           }
         );
         const walker = this;
@@ -18330,8 +18330,8 @@ Please file a bug report at https://github.com/isomorphic-git/isomorphic-git/iss
       };
     };
     var findLastIndex = (array, callback) => {
-      return array.reduce((lastIndex, item, index3) => {
-        return callback(item) ? index3 : lastIndex;
+      return array.reduce((lastIndex, item, index2) => {
+        return callback(item) ? index2 : lastIndex;
       }, -1);
     };
     var GitConfig = class _GitConfig {
@@ -19144,7 +19144,7 @@ Please file a bug report at https://github.com/isomorphic-git/isomorphic-git/iss
         return reader.slice(byte);
       }
     }
-    function fromValue2(value) {
+    function fromValue(value) {
       let queue = [value];
       return {
         next() {
@@ -19159,7 +19159,7 @@ Please file a bug report at https://github.com/isomorphic-git/isomorphic-git/iss
         }
       };
     }
-    function getIterator2(iterable) {
+    function getIterator(iterable) {
       if (iterable[Symbol.asyncIterator]) {
         return iterable[Symbol.asyncIterator]();
       }
@@ -19169,14 +19169,14 @@ Please file a bug report at https://github.com/isomorphic-git/isomorphic-git/iss
       if (iterable.next) {
         return iterable;
       }
-      return fromValue2(iterable);
+      return fromValue(iterable);
     }
     var StreamReader = class {
       constructor(stream) {
         if (typeof Buffer === "undefined") {
           throw new Error("Missing Buffer dependency");
         }
-        this.stream = getIterator2(stream);
+        this.stream = getIterator(stream);
         this.buffer = null;
         this.cursor = 0;
         this.undoCursor = 0;
@@ -20726,8 +20726,8 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
           let oid;
           await GitIndexManager.acquire(
             { fs, gitdir, cache },
-            async function(index3) {
-              const stage = index3.entriesMap.get(entry._fullpath);
+            async function(index2) {
+              const stage = index2.entriesMap.get(entry._fullpath);
               const stats = await entry.stat();
               const config = await self2._getGitConfig(fs, gitdir);
               const filemode = await config.get("core.filemode");
@@ -20741,7 +20741,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
                     GitObject.wrap({ type: "blob", object: content })
                   );
                   if (stage && oid === stage.oid && (!filemode || stats.mode === stage.mode) && compareStats(stats, stage, filemode, trustino)) {
-                    index3.insert({
+                    index2.insert({
                       filepath: entry._fullpath,
                       stats,
                       oid
@@ -21239,8 +21239,8 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
         const updatedGitdir = await discoverGitdir({ fsp: fs, dotgit: gitdir });
         await GitIndexManager.acquire(
           { fs, gitdir: updatedGitdir, cache },
-          async function(index3) {
-            unmergedPaths = index3.unmergedPaths;
+          async function(index2) {
+            unmergedPaths = index2.unmergedPaths;
           }
         );
         const results = await _walk({
@@ -21249,10 +21249,10 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
           dir,
           gitdir: updatedGitdir,
           trees,
-          map: async function(path2, [head, workdir, index3]) {
-            const staged = !await modified(workdir, index3);
+          map: async function(path2, [head, workdir, index2]) {
+            const staged = !await modified(workdir, index2);
             const unmerged = unmergedPaths.includes(path2);
-            const unmodified = !await modified(index3, head);
+            const unmodified = !await modified(index2, head);
             if (staged || unmerged) {
               return head ? {
                 path: path2,
@@ -21270,13 +21270,13 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
         });
         await GitIndexManager.acquire(
           { fs, gitdir: updatedGitdir, cache },
-          async function(index3) {
+          async function(index2) {
             for (const entry of results) {
               if (entry === false)
                 continue;
               if (!entry) {
                 await fs.rmdir(`${dir}/${entry.path}`, { recursive: true });
-                index3.delete({ filepath: entry.path });
+                index2.delete({ filepath: entry.path });
                 continue;
               }
               if (entry.type === "blob") {
@@ -21284,7 +21284,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
                 await fs.write(`${dir}/${entry.path}`, content, {
                   mode: entry.mode
                 });
-                index3.insert({
+                index2.insert({
                   filepath: entry.path,
                   oid: entry.oid,
                   stage: 0
@@ -21436,7 +21436,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
         const updatedGitdir = await discoverGitdir({ fsp: fs, dotgit: gitdir });
         await GitIndexManager.acquire(
           { fs, gitdir: updatedGitdir, cache },
-          async (index3) => {
+          async (index2) => {
             const config = await GitConfigManager.get({ fs, gitdir: updatedGitdir });
             const autocrlf = await config.get("core.autocrlf");
             return addToIndex({
@@ -21444,7 +21444,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
               gitdir: updatedGitdir,
               fs,
               filepath,
-              index: index3,
+              index: index2,
               force,
               parallel,
               autocrlf
@@ -21461,7 +21461,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
       gitdir,
       fs,
       filepath,
-      index: index3,
+      index: index2,
       force,
       parallel,
       autocrlf
@@ -21490,7 +21490,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
                 gitdir,
                 fs,
                 filepath: [join(currentFilepath, child)],
-                index: index3,
+                index: index2,
                 force,
                 parallel,
                 autocrlf
@@ -21504,7 +21504,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
                 gitdir,
                 fs,
                 filepath: [join(currentFilepath, child)],
-                index: index3,
+                index: index2,
                 force,
                 parallel,
                 autocrlf
@@ -21516,7 +21516,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
           if (object === null)
             throw new NotFoundError(currentFilepath);
           const oid = await _writeObject({ fs, gitdir, type: "blob", object });
-          index3.insert({ filepath: currentFilepath, stats, oid });
+          index2.insert({ filepath: currentFilepath, stats, oid });
         }
       });
       const settledPromises = await Promise.allSettled(promises);
@@ -21685,8 +21685,8 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
         throw new MissingNameError("committer");
       return GitIndexManager.acquire(
         { fs, gitdir, cache, allowUnmerged: false },
-        async function(index3) {
-          const inodes = flatFileListToDirectoryStructure(index3.entries);
+        async function(index2) {
+          const inodes = flatFileListToDirectoryStructure(index2.entries);
           const inode = inodes.get(".");
           if (!tree) {
             tree = await constructTree({ fs, gitdir, inode, dryRun });
@@ -22287,7 +22287,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
         const total = ops.length;
         await GitIndexManager.acquire(
           { fs, gitdir, cache },
-          async function(index3) {
+          async function(index2) {
             await Promise.all(
               ops.filter(
                 ([method]) => method === "delete" || method === "delete-index"
@@ -22296,7 +22296,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
                 if (method === "delete") {
                   await fs.rm(filepath);
                 }
-                index3.delete({ filepath: fullpath });
+                index2.delete({ filepath: fullpath });
                 if (onProgress) {
                   await onProgress({
                     phase: "Updating workdir",
@@ -22310,7 +22310,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
         );
         await GitIndexManager.acquire(
           { fs, gitdir, cache },
-          async function(index3) {
+          async function(index2) {
             for (const [method, fullpath] of ops) {
               if (method === "rmdir" || method === "rmdir-index") {
                 const filepath = `${dir}/${fullpath}`;
@@ -22318,7 +22318,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
                   if (method === "rmdir") {
                     await fs.rmdir(filepath);
                   }
-                  index3.delete({ filepath: fullpath });
+                  index2.delete({ filepath: fullpath });
                   if (onProgress) {
                     await onProgress({
                       phase: "Updating workdir",
@@ -22372,11 +22372,11 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
           );
           await GitIndexManager.acquire(
             { fs, gitdir, cache, allowUnmerged: true },
-            async function(index3) {
+            async function(index2) {
               await batchAllSettled(
                 "Update Index",
                 updateWorkingDirResults.map(
-                  ([fullpath, oid2, stats]) => () => updateIndex({ index: index3, fullpath, oid: oid2, stats })
+                  ([fullpath, oid2, stats]) => () => updateIndex({ index: index2, fullpath, oid: oid2, stats })
                 ),
                 onProgress,
                 batchSize
@@ -22386,7 +22386,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
         } else {
           await GitIndexManager.acquire(
             { fs, gitdir, cache, allowUnmerged: true },
-            async function(index3) {
+            async function(index2) {
               await Promise.all(
                 ops.filter(
                   ([method]) => method === "create" || method === "create-index" || method === "update" || method === "mkdir-index"
@@ -22424,7 +22424,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
                     if (method === "mkdir-index") {
                       stats.mode = 57344;
                     }
-                    index3.insert({
+                    index2.insert({
                       filepath: fullpath,
                       stats,
                       oid: oid2
@@ -22709,9 +22709,9 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
         }
       });
     }
-    async function updateIndex({ index: index3, fullpath, stats, oid }) {
+    async function updateIndex({ index: index2, fullpath, stats, oid }) {
       try {
-        index3.insert({
+        index2.insert({
           filepath: fullpath,
           stats,
           oid
@@ -22857,7 +22857,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
       cache,
       dir,
       gitdir = join(dir, ".git"),
-      index: index3,
+      index: index2,
       ourOid,
       baseOid,
       theirOid,
@@ -22958,15 +22958,15 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
                       }
                       const ourOid2 = await ours.oid();
                       const theirOid2 = await theirs.oid();
-                      index3.delete({ filepath });
+                      index2.delete({ filepath });
                       if (baseOid2) {
-                        index3.insert({ filepath, oid: baseOid2, stage: 1 });
+                        index2.insert({ filepath, oid: baseOid2, stage: 1 });
                       }
-                      index3.insert({ filepath, oid: ourOid2, stage: 2 });
-                      index3.insert({ filepath, oid: theirOid2, stage: 3 });
+                      index2.insert({ filepath, oid: ourOid2, stage: 2 });
+                      index2.insert({ filepath, oid: theirOid2, stage: 3 });
                     }
                   } else if (!abortOnConflict) {
-                    index3.insert({ filepath, oid: r.mergeResult.oid, stage: 0 });
+                    index2.insert({ filepath, oid: r.mergeResult.oid, stage: 0 });
                   }
                   return r.mergeResult;
                 });
@@ -22977,9 +22977,9 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
                 if (!abortOnConflict) {
                   const baseOid2 = await base.oid();
                   const theirOid2 = await theirs.oid();
-                  index3.delete({ filepath });
-                  index3.insert({ filepath, oid: baseOid2, stage: 1 });
-                  index3.insert({ filepath, oid: theirOid2, stage: 3 });
+                  index2.delete({ filepath });
+                  index2.insert({ filepath, oid: baseOid2, stage: 1 });
+                  index2.insert({ filepath, oid: theirOid2, stage: 3 });
                 }
                 return {
                   mode: await theirs.mode(),
@@ -22994,9 +22994,9 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
                 if (!abortOnConflict) {
                   const baseOid2 = await base.oid();
                   const ourOid2 = await ours.oid();
-                  index3.delete({ filepath });
-                  index3.insert({ filepath, oid: baseOid2, stage: 1 });
-                  index3.insert({ filepath, oid: ourOid2, stage: 2 });
+                  index2.delete({ filepath });
+                  index2.insert({ filepath, oid: baseOid2, stage: 1 });
+                  index2.insert({ filepath, oid: ourOid2, stage: 2 });
                 }
                 return {
                   mode: await ours.mode(),
@@ -23348,9 +23348,9 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
           }
         }
       });
-      await GitIndexManager.acquire({ fs, gitdir, cache: {} }, async (index3) => {
+      await GitIndexManager.acquire({ fs, gitdir, cache: {} }, async (index2) => {
         stageUpdated.forEach(({ filepath, stats, oid }) => {
-          index3.insert({ filepath, stats, oid });
+          index2.insert({ filepath, stats, oid });
         });
       });
     }
@@ -23398,13 +23398,13 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
       });
       const mergedTreeOid = await GitIndexManager.acquire(
         { fs, gitdir, cache, allowUnmerged: false },
-        async (index3) => {
+        async (index2) => {
           return mergeTree({
             fs,
             cache,
             dir,
             gitdir,
-            index: index3,
+            index: index2,
             ourOid: currentCommit.tree,
             baseOid: cherryParent.tree,
             theirOid: cherryCommit.tree,
@@ -23553,8 +23553,8 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
     function calculateBasicAuthHeader({ username = "", password = "" }) {
       return `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`;
     }
-    async function forAwait2(iterable, cb) {
-      const iter = getIterator2(iterable);
+    async function forAwait(iterable, cb) {
+      const iter = getIterator(iterable);
       while (true) {
         const { value, done } = await iter.next();
         if (value)
@@ -23565,10 +23565,10 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
       if (iter.return)
         iter.return();
     }
-    async function collect2(iterable) {
+    async function collect(iterable) {
       let size2 = 0;
       const buffers = [];
-      await forAwait2(iterable, (value) => {
+      await forAwait(iterable, (value) => {
         buffers.push(value);
         size2 += value.byteLength;
       });
@@ -23723,7 +23723,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
     };
     var stringifyBody = async (res) => {
       try {
-        const data = Buffer.from(await collect2(res.body));
+        const data = Buffer.from(await collect(res.body));
         const response = data.toString("utf8");
         const preview = response.length < 256 ? response : response.slice(0, 256) + "...";
         return { preview, response, data };
@@ -24109,7 +24109,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
       const output = new FIFO();
       let tmp = "";
       (async () => {
-        await forAwait2(input, (chunk) => {
+        await forAwait(input, (chunk) => {
           chunk = chunk.toString("utf8");
           tmp += chunk;
           while (true) {
@@ -24249,7 +24249,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
       let nak = false;
       let done = false;
       return new Promise((resolve2, reject2) => {
-        forAwait2(packetlines, (data) => {
+        forAwait(packetlines, (data) => {
           const line = data.toString("utf8").trim();
           if (line.startsWith("shallow")) {
             const oid = line.slice(-41).trim();
@@ -24454,7 +24454,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
         since,
         exclude
       });
-      const packbuffer = Buffer.from(await collect2(packstream));
+      const packbuffer = Buffer.from(await collect(packstream));
       const raw = await GitRemoteHTTP2.connect({
         http,
         onProgress,
@@ -24553,7 +24553,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
       };
       if (onProgress || onMessage) {
         const lines = splitLines(response.progress);
-        forAwait2(lines, async (line) => {
+        forAwait(lines, async (line) => {
           if (onMessage)
             await onMessage(line);
           if (onProgress) {
@@ -24568,7 +24568,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
           }
         });
       }
-      const packfile = Buffer.from(await collect2(response.packfile));
+      const packfile = Buffer.from(await collect(response.packfile));
       if (raw.body.error)
         throw raw.body.error;
       const packfileSha = packfile.slice(-20).toString("hex");
@@ -25043,13 +25043,13 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
     async function _findMergeBase({ fs, cache, gitdir, oids }) {
       const visits = {};
       const passes = oids.length;
-      let heads = oids.map((oid, index3) => ({ index: index3, oid }));
+      let heads = oids.map((oid, index2) => ({ index: index2, oid }));
       while (heads.length) {
         const result = /* @__PURE__ */ new Set();
-        for (const { oid, index: index3 } of heads) {
+        for (const { oid, index: index2 } of heads) {
           if (!visits[oid])
             visits[oid] = /* @__PURE__ */ new Set();
-          visits[oid].add(index3);
+          visits[oid].add(index2);
           if (visits[oid].size === passes) {
             result.add(oid);
           }
@@ -25058,14 +25058,14 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
           return [...result];
         }
         const newheads = /* @__PURE__ */ new Map();
-        for (const { oid, index: index3 } of heads) {
+        for (const { oid, index: index2 } of heads) {
           try {
             const { object } = await _readObject({ fs, cache, gitdir, oid });
             const commit3 = GitCommit.from(object);
             const { parent } = commit3.parseHeaders();
             for (const oid2 of parent) {
-              if (!visits[oid2] || !visits[oid2].has(index3)) {
-                newheads.set(oid2 + ":" + index3, { oid: oid2, index: index3 });
+              if (!visits[oid2] || !visits[oid2].has(index2)) {
+                newheads.set(oid2 + ":" + index2, { oid: oid2, index: index2 });
               }
             }
           } catch (err) {
@@ -25152,13 +25152,13 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
         }
         const tree = await GitIndexManager.acquire(
           { fs, gitdir, cache, allowUnmerged: false },
-          async (index3) => {
+          async (index2) => {
             return mergeTree({
               fs,
               cache,
               dir,
               gitdir,
-              index: index3,
+              index: index2,
               ourOid,
               theirOid,
               baseOid,
@@ -25879,8 +25879,8 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
       } else {
         return GitIndexManager.acquire(
           { fs, gitdir, cache },
-          async function(index3) {
-            return index3.entries.map((x) => x.path);
+          async function(index2) {
+            return index2.entries.map((x) => x.path);
           }
         );
       }
@@ -26469,7 +26469,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
     }
     async function _packObjects({ fs, cache, gitdir, oids, write: write2 }) {
       const buffers = await _pack({ fs, cache, gitdir, oids });
-      const packfile = Buffer.from(await collect2(buffers));
+      const packfile = Buffer.from(await collect(buffers));
       const packfileSha = packfile.slice(-20).toString("hex");
       const filename = `pack-${packfileSha}.pack`;
       if (write2) {
@@ -26901,7 +26901,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
       const { packfile, progress } = await GitSideBand.demux(res.body);
       if (onMessage) {
         const lines = splitLines(progress);
-        forAwait2(lines, async (line) => {
+        forAwait(lines, async (line) => {
           await onMessage(line);
         });
       }
@@ -27257,8 +27257,8 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
         const updatedGitdir = await discoverGitdir({ fsp, dotgit: gitdir });
         await GitIndexManager.acquire(
           { fs: fsp, gitdir: updatedGitdir, cache },
-          async function(index3) {
-            index3.delete({ filepath });
+          async function(index2) {
+            index2.delete({ filepath });
           }
         );
       } catch (err) {
@@ -27498,10 +27498,10 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
         }
         await GitIndexManager.acquire(
           { fs, gitdir: updatedGitdir, cache },
-          async function(index3) {
-            index3.delete({ filepath });
+          async function(index2) {
+            index2.delete({ filepath });
             if (oid) {
-              index3.insert({ filepath, stats, oid });
+              index2.insert({ filepath, stats, oid });
             }
           }
         );
@@ -28033,8 +28033,8 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
         });
         const indexEntry = await GitIndexManager.acquire(
           { fs, gitdir: updatedGitdir, cache },
-          async function(index3) {
-            for (const entry of index3) {
+          async function(index2) {
+            for (const entry of index2) {
               if (entry.path === filepath)
                 return entry;
             }
@@ -28059,8 +28059,8 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
               if (stats.size !== -1) {
                 GitIndexManager.acquire(
                   { fs, gitdir: updatedGitdir, cache },
-                  async function(index3) {
-                    index3.insert({ filepath, stats, oid: workdirOid });
+                  async function(index2) {
+                    index2.insert({ filepath, stats, oid: workdirOid });
                   }
                 );
               }
@@ -28272,7 +28272,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
         if (remove3) {
           return await GitIndexManager.acquire(
             { fs, gitdir: updatedGitdir, cache },
-            async function(index3) {
+            async function(index2) {
               if (!force) {
                 const fileStats2 = await fs.lstat(join(dir, filepath));
                 if (fileStats2) {
@@ -28282,8 +28282,8 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
                   return;
                 }
               }
-              if (index3.has({ filepath })) {
-                index3.delete({
+              if (index2.has({ filepath })) {
+                index2.delete({
                   filepath
                 });
               }
@@ -28304,8 +28304,8 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
         }
         return await GitIndexManager.acquire(
           { fs, gitdir: updatedGitdir, cache },
-          async function(index3) {
-            if (!add3 && !index3.has({ filepath })) {
+          async function(index2) {
+            if (!add3 && !index2.has({ filepath })) {
               throw new NotFoundError(
                 `file at "${filepath}" in index and "add" not set`
               );
@@ -28333,7 +28333,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
                 size: 0
               };
             }
-            index3.insert({
+            index2.insert({
               filepath,
               oid,
               stats
@@ -28564,7 +28564,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
         throw err;
       }
     }
-    var index2 = {
+    var index = {
       Errors,
       STAGE,
       TREE: TREE2,
@@ -28652,7 +28652,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
     exports.clone = clone;
     exports.commit = commit2;
     exports.currentBranch = currentBranch;
-    exports.default = index2;
+    exports.default = index;
     exports.deleteBranch = deleteBranch;
     exports.deleteRef = deleteRef;
     exports.deleteRemote = deleteRemote;
@@ -31644,7 +31644,7 @@ window.process = {
 console.log("[VaultSync] Polyfills loaded");
 
 // src/main.ts
-var import_obsidian8 = require("obsidian");
+var import_obsidian9 = require("obsidian");
 
 // src/ui/status-bar.ts
 var import_obsidian = require("obsidian");
@@ -34543,10 +34543,10 @@ var ZodObject = class _ZodObject extends ZodType {
   //   }) as any;
   //   return merged;
   // }
-  catchall(index2) {
+  catchall(index) {
     return new _ZodObject({
       ...this._def,
-      catchall: index2
+      catchall: index
     });
   }
   pick(mask) {
@@ -34864,9 +34864,9 @@ function mergeValues(a, b) {
       return { valid: false };
     }
     const newArray = [];
-    for (let index2 = 0; index2 < a.length; index2++) {
-      const itemA = a[index2];
-      const itemB = b[index2];
+    for (let index = 0; index < a.length; index++) {
+      const itemA = a[index];
+      const itemB = b[index];
       const sharedValue = mergeValues(itemA, itemB);
       if (!sharedValue.valid) {
         return { valid: false };
@@ -35072,10 +35072,10 @@ var ZodMap = class extends ZodType {
     }
     const keyType = this._def.keyType;
     const valueType = this._def.valueType;
-    const pairs = [...ctx.data.entries()].map(([key, value], index2) => {
+    const pairs = [...ctx.data.entries()].map(([key, value], index) => {
       return {
-        key: keyType._parse(new ParseInputLazyPath(ctx, key, ctx.path, [index2, "key"])),
-        value: valueType._parse(new ParseInputLazyPath(ctx, value, ctx.path, [index2, "value"]))
+        key: keyType._parse(new ParseInputLazyPath(ctx, key, ctx.path, [index, "key"])),
+        value: valueType._parse(new ParseInputLazyPath(ctx, value, ctx.path, [index, "value"]))
       };
     });
     if (ctx.common.async) {
@@ -38388,105 +38388,62 @@ function hashContent(content) {
 // src/utils/git-utils.ts
 var git = __toESM(require_isomorphic_git(), 1);
 
-// ../node_modules/.bun/isomorphic-git@1.37.1/node_modules/isomorphic-git/http/web/index.js
-function fromValue(value) {
-  let queue = [value];
-  return {
-    next() {
-      return Promise.resolve({ done: queue.length === 0, value: queue.pop() });
-    },
-    return() {
-      queue = [];
-      return {};
-    },
-    [Symbol.asyncIterator]() {
-      return this;
+// src/utils/obsidian-http.ts
+var import_obsidian4 = require("obsidian");
+var obsidianHttp = {
+  async request({
+    url,
+    method,
+    headers,
+    body
+  }) {
+    let requestBody;
+    if (body) {
+      if (body instanceof Uint8Array) {
+        requestBody = body.buffer;
+      } else if (body instanceof ArrayBuffer) {
+        requestBody = body;
+      } else {
+        const chunks = [];
+        for await (const chunk of body) {
+          chunks.push(chunk);
+        }
+        const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
+        const combined = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const chunk of chunks) {
+          combined.set(chunk, offset);
+          offset += chunk.length;
+        }
+        requestBody = combined.buffer;
+      }
     }
-  };
-}
-function getIterator(iterable) {
-  if (iterable[Symbol.asyncIterator]) {
-    return iterable[Symbol.asyncIterator]();
-  }
-  if (iterable[Symbol.iterator]) {
-    return iterable[Symbol.iterator]();
-  }
-  if (iterable.next) {
-    return iterable;
-  }
-  return fromValue(iterable);
-}
-async function forAwait(iterable, cb) {
-  const iter = getIterator(iterable);
-  while (true) {
-    const { value, done } = await iter.next();
-    if (value)
-      await cb(value);
-    if (done)
-      break;
-  }
-  if (iter.return)
-    iter.return();
-}
-async function collect(iterable) {
-  let size2 = 0;
-  const buffers = [];
-  await forAwait(iterable, (value) => {
-    buffers.push(value);
-    size2 += value.byteLength;
-  });
-  const result = new Uint8Array(size2);
-  let nextIndex = 0;
-  for (const buffer of buffers) {
-    result.set(buffer, nextIndex);
-    nextIndex += buffer.byteLength;
-  }
-  return result;
-}
-function fromStream(stream) {
-  if (stream[Symbol.asyncIterator])
-    return stream;
-  const reader = stream.getReader();
-  return {
-    next() {
-      return reader.read();
-    },
-    return() {
-      reader.releaseLock();
-      return {};
-    },
-    [Symbol.asyncIterator]() {
-      return this;
+    try {
+      const params2 = {
+        url,
+        method,
+        headers,
+        body: requestBody,
+        throw: false
+        // Don't throw on non-200 status codes
+      };
+      const response = await (0, import_obsidian4.requestUrl)(params2);
+      return {
+        url,
+        method,
+        statusCode: response.status,
+        statusMessage: "OK",
+        // requestUrl doesn't provide statusMessage, but standard says OK is fine
+        headers: response.headers,
+        body: [new Uint8Array(response.arrayBuffer)]
+        // isomorphic-git expects an Iterable of Uint8Arrays
+      };
+    } catch (e) {
+      console.error("[VaultSync/HTTP] requestUrl failed:", e);
+      throw e;
     }
-  };
-}
-async function request({
-  onProgress,
-  url,
-  method = "GET",
-  headers = {},
-  body
-}) {
-  if (body) {
-    body = await collect(body);
   }
-  const res = await fetch(url, { method, headers, body });
-  const iter = res.body && res.body.getReader ? fromStream(res.body) : [new Uint8Array(await res.arrayBuffer())];
-  headers = {};
-  for (const [key, value] of res.headers.entries()) {
-    headers[key] = value;
-  }
-  return {
-    url: res.url,
-    method: res.method,
-    statusCode: res.status,
-    statusMessage: res.statusText,
-    body: iter,
-    headers
-  };
-}
-var index = { request };
-var web_default = index;
+};
 
 // src/git/vault-fs.ts
 function createVaultFs(adapter) {
@@ -38645,7 +38602,7 @@ var GitUtils = class {
       console.log(`[VaultSync/Git] Fetching from ${remoteUrl} [${branch}]...`);
       await git.fetch({
         fs,
-        http: web_default,
+        http: obsidianHttp,
         dir,
         remote: "origin",
         ref: branch,
@@ -38720,7 +38677,7 @@ var GitUtils = class {
     const fs = createVaultFs(app.vault.adapter);
     await git.push({
       fs,
-      http: web_default,
+      http: obsidianHttp,
       dir: ".",
       remote: "origin",
       ref: branch,
@@ -38792,7 +38749,7 @@ function debounce(func, wait) {
 }
 
 // src/sync/orchestrator.ts
-var import_obsidian4 = require("obsidian");
+var import_obsidian5 = require("obsidian");
 var SyncOrchestrator = class {
   constructor(plugin) {
     __publicField(this, "plugin");
@@ -38842,7 +38799,7 @@ var SyncOrchestrator = class {
    * Dispatches to CRDT and Git modules as needed.
    */
   async handleFileEvent(type, file, oldPath) {
-    if (file instanceof import_obsidian4.TFile) {
+    if (file instanceof import_obsidian5.TFile) {
       const classification = classifyFile(file.path);
       this.plugin.logSyncEvent("file_op", `File ${type}: ${file.path}`, "info", `Classification: ${classification.type}`, [file.path]);
       switch (type) {
@@ -38862,7 +38819,7 @@ var SyncOrchestrator = class {
           }
           break;
       }
-    } else if (file instanceof import_obsidian4.TFolder && type === "rename" && oldPath) {
+    } else if (file instanceof import_obsidian5.TFolder && type === "rename" && oldPath) {
       this.plugin.logSyncEvent("file_op", `Folder renamed: ${oldPath} -> ${file.path}`, "info");
       await this.plugin.crdtManager.rekeyDocsInFolder(oldPath, file.path);
     }
@@ -41376,18 +41333,18 @@ var readAndApplyDeleteSet = (decoder2, transaction, store) => {
         if (state < clockEnd) {
           addToDeleteSet(unappliedDS, client, state, clockEnd - state);
         }
-        let index2 = findIndexSS(structs, clock);
-        let struct = structs[index2];
+        let index = findIndexSS(structs, clock);
+        let struct = structs[index];
         if (!struct.deleted && struct.id.clock < clock) {
-          structs.splice(index2 + 1, 0, splitItem(transaction, struct, clock - struct.id.clock));
-          index2++;
+          structs.splice(index + 1, 0, splitItem(transaction, struct, clock - struct.id.clock));
+          index++;
         }
-        while (index2 < structs.length) {
-          struct = structs[index2++];
+        while (index < structs.length) {
+          struct = structs[index++];
           if (struct.id.clock < clockEnd) {
             if (!struct.deleted) {
               if (clockEnd < struct.id.clock + struct.length) {
-                structs.splice(index2, 0, splitItem(transaction, struct, clockEnd - struct.id.clock));
+                structs.splice(index, 0, splitItem(transaction, struct, clockEnd - struct.id.clock));
               }
               struct.delete(transaction);
             }
@@ -42564,13 +42521,13 @@ var AbsolutePosition = class {
    * @param {number} index
    * @param {number} [assoc]
    */
-  constructor(type, index2, assoc = 0) {
+  constructor(type, index, assoc = 0) {
     this.type = type;
-    this.index = index2;
+    this.index = index;
     this.assoc = assoc;
   }
 };
-var createAbsolutePosition = (type, index2, assoc = 0) => new AbsolutePosition(type, index2, assoc);
+var createAbsolutePosition = (type, index, assoc = 0) => new AbsolutePosition(type, index, assoc);
 var createRelativePosition = (type, item, assoc) => {
   let typeid = null;
   let tname = null;
@@ -42581,20 +42538,20 @@ var createRelativePosition = (type, item, assoc) => {
   }
   return new RelativePosition(typeid, tname, item, assoc);
 };
-var createRelativePositionFromTypeIndex = (type, index2, assoc = 0) => {
+var createRelativePositionFromTypeIndex = (type, index, assoc = 0) => {
   let t = type._start;
   if (assoc < 0) {
-    if (index2 === 0) {
+    if (index === 0) {
       return createRelativePosition(type, null, assoc);
     }
-    index2--;
+    index--;
   }
   while (t !== null) {
     if (!t.deleted && t.countable) {
-      if (t.length > index2) {
-        return createRelativePosition(type, createID(t.id.client, t.id.clock + index2), assoc);
+      if (t.length > index) {
+        return createRelativePosition(type, createID(t.id.client, t.id.clock + index), assoc);
       }
-      index2 -= t.length;
+      index -= t.length;
     }
     if (t.right === null && assoc < 0) {
       return createRelativePosition(type, t.lastId, assoc);
@@ -42618,7 +42575,7 @@ var createAbsolutePositionFromRelativePosition = (rpos, doc2, followUndoneDeleti
   const tname = rpos.tname;
   const assoc = rpos.assoc;
   let type = null;
-  let index2 = 0;
+  let index = 0;
   if (rightID !== null) {
     if (getState(store, rightID.client) <= rightID.clock) {
       return null;
@@ -42631,11 +42588,11 @@ var createAbsolutePositionFromRelativePosition = (rpos, doc2, followUndoneDeleti
     type = /** @type {AbstractType<any>} */
     right.parent;
     if (type._item === null || !type._item.deleted) {
-      index2 = right.deleted || !right.countable ? 0 : res.diff + (assoc >= 0 ? 0 : 1);
+      index = right.deleted || !right.countable ? 0 : res.diff + (assoc >= 0 ? 0 : 1);
       let n = right.left;
       while (n !== null) {
         if (!n.deleted && n.countable) {
-          index2 += n.length;
+          index += n.length;
         }
         n = n.left;
       }
@@ -42657,12 +42614,12 @@ var createAbsolutePositionFromRelativePosition = (rpos, doc2, followUndoneDeleti
       throw unexpectedCase();
     }
     if (assoc >= 0) {
-      index2 = type._length;
+      index = type._length;
     } else {
-      index2 = 0;
+      index = 0;
     }
   }
-  return createAbsolutePosition(type, index2, rpos.assoc);
+  return createAbsolutePosition(type, index, rpos.assoc);
 };
 var compareRelativePositions = (a, b) => a === b || a !== null && b !== null && a.tname === b.tname && compareIDs(a.item, b.item) && compareIDs(a.type, b.type) && a.assoc === b.assoc;
 var Snapshot = class {
@@ -42761,13 +42718,13 @@ var getItem = (
   find
 );
 var findIndexCleanStart = (transaction, structs, clock) => {
-  const index2 = findIndexSS(structs, clock);
-  const struct = structs[index2];
+  const index = findIndexSS(structs, clock);
+  const struct = structs[index];
   if (struct.id.clock < clock && struct instanceof Item) {
-    structs.splice(index2 + 1, 0, splitItem(transaction, struct, clock - struct.id.clock));
-    return index2 + 1;
+    structs.splice(index + 1, 0, splitItem(transaction, struct, clock - struct.id.clock));
+    return index + 1;
   }
-  return index2;
+  return index;
 };
 var getItemCleanStart = (transaction, id2) => {
   const structs = (
@@ -42778,10 +42735,10 @@ var getItemCleanStart = (transaction, id2) => {
 };
 var getItemCleanEnd = (transaction, store, id2) => {
   const structs = store.clients.get(id2.client);
-  const index2 = findIndexSS(structs, id2.clock);
-  const struct = structs[index2];
+  const index = findIndexSS(structs, id2.clock);
+  const struct = structs[index];
   if (id2.clock !== struct.id.clock + struct.length - 1 && struct.constructor !== GC) {
-    structs.splice(index2 + 1, 0, splitItem(transaction, struct, id2.clock - struct.id.clock + 1));
+    structs.splice(index + 1, 0, splitItem(transaction, struct, id2.clock - struct.id.clock + 1));
   }
   return struct;
 };
@@ -42797,15 +42754,15 @@ var iterateStructs = (transaction, structs, clockStart, len, f) => {
     return;
   }
   const clockEnd = clockStart + len;
-  let index2 = findIndexCleanStart(transaction, structs, clockStart);
+  let index = findIndexCleanStart(transaction, structs, clockStart);
   let struct;
   do {
-    struct = structs[index2++];
+    struct = structs[index++];
     if (clockEnd < struct.id.clock + struct.length) {
       findIndexCleanStart(transaction, structs, clockEnd);
     }
     f(struct);
-  } while (index2 < structs.length && structs[index2].id.clock < clockEnd);
+  } while (index < structs.length && structs[index].id.clock < clockEnd);
 };
 var Transaction = class {
   /**
@@ -43870,39 +43827,39 @@ var ArraySearchMarker = class {
    * @param {Item} p
    * @param {number} index
    */
-  constructor(p, index2) {
+  constructor(p, index) {
     p.marker = true;
     this.p = p;
-    this.index = index2;
+    this.index = index;
     this.timestamp = globalSearchMarkerTimestamp++;
   }
 };
 var refreshMarkerTimestamp = (marker) => {
   marker.timestamp = globalSearchMarkerTimestamp++;
 };
-var overwriteMarker = (marker, p, index2) => {
+var overwriteMarker = (marker, p, index) => {
   marker.p.marker = false;
   marker.p = p;
   p.marker = true;
-  marker.index = index2;
+  marker.index = index;
   marker.timestamp = globalSearchMarkerTimestamp++;
 };
-var markPosition = (searchMarker, p, index2) => {
+var markPosition = (searchMarker, p, index) => {
   if (searchMarker.length >= maxSearchMarker) {
     const marker = searchMarker.reduce((a, b) => a.timestamp < b.timestamp ? a : b);
-    overwriteMarker(marker, p, index2);
+    overwriteMarker(marker, p, index);
     return marker;
   } else {
-    const pm = new ArraySearchMarker(p, index2);
+    const pm = new ArraySearchMarker(p, index);
     searchMarker.push(pm);
     return pm;
   }
 };
-var findMarker = (yarray, index2) => {
-  if (yarray._start === null || index2 === 0 || yarray._searchMarker === null) {
+var findMarker = (yarray, index) => {
+  if (yarray._start === null || index === 0 || yarray._searchMarker === null) {
     return null;
   }
-  const marker = yarray._searchMarker.length === 0 ? null : yarray._searchMarker.reduce((a, b) => abs(index2 - a.index) < abs(index2 - b.index) ? a : b);
+  const marker = yarray._searchMarker.length === 0 ? null : yarray._searchMarker.reduce((a, b) => abs(index - a.index) < abs(index - b.index) ? a : b);
   let p = yarray._start;
   let pindex = 0;
   if (marker !== null) {
@@ -43910,16 +43867,16 @@ var findMarker = (yarray, index2) => {
     pindex = marker.index;
     refreshMarkerTimestamp(marker);
   }
-  while (p.right !== null && pindex < index2) {
+  while (p.right !== null && pindex < index) {
     if (!p.deleted && p.countable) {
-      if (index2 < pindex + p.length) {
+      if (index < pindex + p.length) {
         break;
       }
       pindex += p.length;
     }
     p = p.right;
   }
-  while (p.left !== null && pindex > index2) {
+  while (p.left !== null && pindex > index) {
     p = p.left;
     if (!p.deleted && p.countable) {
       pindex -= p.length;
@@ -43939,7 +43896,7 @@ var findMarker = (yarray, index2) => {
     return markPosition(yarray._searchMarker, p, pindex);
   }
 };
-var updateMarkerChanges = (searchMarker, index2, len) => {
+var updateMarkerChanges = (searchMarker, index, len) => {
   for (let i = searchMarker.length - 1; i >= 0; i--) {
     const m = searchMarker[i];
     if (len > 0) {
@@ -43958,8 +43915,8 @@ var updateMarkerChanges = (searchMarker, index2, len) => {
       m.p = p;
       p.marker = true;
     }
-    if (index2 < m.index || len > 0 && index2 === m.index) {
-      m.index = max(index2, m.index + len);
+    if (index < m.index || len > 0 && index === m.index) {
+      m.index = max(index, m.index + len);
     }
   }
 };
@@ -44139,14 +44096,14 @@ var typeListToArray = (type) => {
 };
 var typeListForEach = (type, f) => {
   var _a;
-  let index2 = 0;
+  let index = 0;
   let n = type._start;
   (_a = type.doc) != null ? _a : warnPrematureAccess();
   while (n !== null) {
     if (n.countable && !n.deleted) {
       const c = n.content.getContent();
       for (let i = 0; i < c.length; i++) {
-        f(c[i], index2++, type);
+        f(c[i], index++, type);
       }
     }
     n = n.right;
@@ -44193,21 +44150,21 @@ var typeListCreateIterator = (type) => {
     }
   };
 };
-var typeListGet = (type, index2) => {
+var typeListGet = (type, index) => {
   var _a;
   (_a = type.doc) != null ? _a : warnPrematureAccess();
-  const marker = findMarker(type, index2);
+  const marker = findMarker(type, index);
   let n = type._start;
   if (marker !== null) {
     n = marker.p;
-    index2 -= marker.index;
+    index -= marker.index;
   }
   for (; n !== null; n = n.right) {
     if (!n.deleted && n.countable) {
-      if (index2 < n.length) {
-        return n.content.getContent()[index2];
+      if (index < n.length) {
+        return n.content.getContent()[index];
       }
-      index2 -= n.length;
+      index -= n.length;
     }
   }
 };
@@ -44269,36 +44226,36 @@ var typeListInsertGenericsAfter = (transaction, parent, referenceItem, content) 
   packJsonContent();
 };
 var lengthExceeded = () => create3("Length exceeded!");
-var typeListInsertGenerics = (transaction, parent, index2, content) => {
-  if (index2 > parent._length) {
+var typeListInsertGenerics = (transaction, parent, index, content) => {
+  if (index > parent._length) {
     throw lengthExceeded();
   }
-  if (index2 === 0) {
+  if (index === 0) {
     if (parent._searchMarker) {
-      updateMarkerChanges(parent._searchMarker, index2, content.length);
+      updateMarkerChanges(parent._searchMarker, index, content.length);
     }
     return typeListInsertGenericsAfter(transaction, parent, null, content);
   }
-  const startIndex = index2;
-  const marker = findMarker(parent, index2);
+  const startIndex = index;
+  const marker = findMarker(parent, index);
   let n = parent._start;
   if (marker !== null) {
     n = marker.p;
-    index2 -= marker.index;
-    if (index2 === 0) {
+    index -= marker.index;
+    if (index === 0) {
       n = n.prev;
-      index2 += n && n.countable && !n.deleted ? n.length : 0;
+      index += n && n.countable && !n.deleted ? n.length : 0;
     }
   }
   for (; n !== null; n = n.right) {
     if (!n.deleted && n.countable) {
-      if (index2 <= n.length) {
-        if (index2 < n.length) {
-          getItemCleanStart(transaction, createID(n.id.client, n.id.clock + index2));
+      if (index <= n.length) {
+        if (index < n.length) {
+          getItemCleanStart(transaction, createID(n.id.client, n.id.clock + index));
         }
         break;
       }
-      index2 -= n.length;
+      index -= n.length;
     }
   }
   if (parent._searchMarker) {
@@ -44316,24 +44273,24 @@ var typeListPushGenerics = (transaction, parent, content) => {
   }
   return typeListInsertGenericsAfter(transaction, parent, n, content);
 };
-var typeListDelete = (transaction, parent, index2, length2) => {
+var typeListDelete = (transaction, parent, index, length2) => {
   if (length2 === 0) {
     return;
   }
-  const startIndex = index2;
+  const startIndex = index;
   const startLength = length2;
-  const marker = findMarker(parent, index2);
+  const marker = findMarker(parent, index);
   let n = parent._start;
   if (marker !== null) {
     n = marker.p;
-    index2 -= marker.index;
+    index -= marker.index;
   }
-  for (; n !== null && index2 > 0; n = n.right) {
+  for (; n !== null && index > 0; n = n.right) {
     if (!n.deleted && n.countable) {
-      if (index2 < n.length) {
-        getItemCleanStart(transaction, createID(n.id.client, n.id.clock + index2));
+      if (index < n.length) {
+        getItemCleanStart(transaction, createID(n.id.client, n.id.clock + index));
       }
-      index2 -= n.length;
+      index -= n.length;
     }
   }
   while (length2 > 0 && n !== null) {
@@ -44541,19 +44498,19 @@ var YArray = class _YArray extends AbstractType {
    * @param {number} index The index to insert content at.
    * @param {Array<T>} content The array of content
    */
-  insert(index2, content) {
+  insert(index, content) {
     if (this.doc !== null) {
       transact(this.doc, (transaction) => {
         typeListInsertGenerics(
           transaction,
           this,
-          index2,
+          index,
           /** @type {any} */
           content
         );
       });
     } else {
-      this._prelimContent.splice(index2, 0, ...content);
+      this._prelimContent.splice(index, 0, ...content);
     }
   }
   /**
@@ -44591,13 +44548,13 @@ var YArray = class _YArray extends AbstractType {
    * @param {number} index Index at which to start deleting elements
    * @param {number} length The number of elements to remove. Defaults to 1.
    */
-  delete(index2, length2 = 1) {
+  delete(index, length2 = 1) {
     if (this.doc !== null) {
       transact(this.doc, (transaction) => {
-        typeListDelete(transaction, this, index2, length2);
+        typeListDelete(transaction, this, index, length2);
       });
     } else {
-      this._prelimContent.splice(index2, length2);
+      this._prelimContent.splice(index, length2);
     }
   }
   /**
@@ -44606,8 +44563,8 @@ var YArray = class _YArray extends AbstractType {
    * @param {number} index The index of the element to return from the YArray
    * @return {T}
    */
-  get(index2) {
-    return typeListGet(this, index2);
+  get(index) {
+    return typeListGet(this, index);
   }
   /**
    * Transforms this YArray to a JavaScript Array.
@@ -44923,10 +44880,10 @@ var ItemTextListPosition = class {
    * @param {number} index
    * @param {Map<string,any>} currentAttributes
    */
-  constructor(left, right, index2, currentAttributes) {
+  constructor(left, right, index, currentAttributes) {
     this.left = left;
     this.right = right;
-    this.index = index2;
+    this.index = index;
     this.currentAttributes = currentAttributes;
   }
   /**
@@ -44983,15 +44940,15 @@ var findNextPosition = (transaction, pos, count2) => {
   }
   return pos;
 };
-var findPosition = (transaction, parent, index2, useSearchMarker) => {
+var findPosition = (transaction, parent, index, useSearchMarker) => {
   const currentAttributes = /* @__PURE__ */ new Map();
-  const marker = useSearchMarker ? findMarker(parent, index2) : null;
+  const marker = useSearchMarker ? findMarker(parent, index) : null;
   if (marker) {
     const pos = new ItemTextListPosition(marker.p.left, marker.p, marker.index, currentAttributes);
-    return findNextPosition(transaction, pos, index2 - marker.index);
+    return findNextPosition(transaction, pos, index - marker.index);
   } else {
     const pos = new ItemTextListPosition(null, parent._start, 0, currentAttributes);
-    return findNextPosition(transaction, pos, index2);
+    return findNextPosition(transaction, pos, index);
   }
 };
 var insertNegatedAttributes = (transaction, parent, currPos, negatedAttributes) => {
@@ -45082,14 +45039,14 @@ var insertText = (transaction, parent, currPos, text2, attributes) => {
     /** @type {string} */
     text2
   ) : text2 instanceof AbstractType ? new ContentType(text2) : new ContentEmbed(text2);
-  let { left, right, index: index2 } = currPos;
+  let { left, right, index } = currPos;
   if (parent._searchMarker) {
     updateMarkerChanges(parent._searchMarker, currPos.index, content.getLength());
   }
   right = new Item(createID(ownClientId, getState(doc2.store, ownClientId)), left, left && left.lastId, right, right && right.id, parent, null, content);
   right.integrate(transaction, 0);
   currPos.right = right;
-  currPos.index = index2;
+  currPos.index = index;
   currPos.forward();
   insertNegatedAttributes(transaction, parent, currPos, negatedAttributes);
 };
@@ -45811,14 +45768,14 @@ var YText = class _YText extends AbstractType {
    *                                    Text.
    * @public
    */
-  insert(index2, text2, attributes) {
+  insert(index, text2, attributes) {
     if (text2.length <= 0) {
       return;
     }
     const y = this.doc;
     if (y !== null) {
       transact(y, (transaction) => {
-        const pos = findPosition(transaction, this, index2, !attributes);
+        const pos = findPosition(transaction, this, index, !attributes);
         if (!attributes) {
           attributes = {};
           pos.currentAttributes.forEach((v, k) => {
@@ -45828,7 +45785,7 @@ var YText = class _YText extends AbstractType {
         insertText(transaction, this, pos, text2, attributes);
       });
     } else {
-      this._pending.push(() => this.insert(index2, text2, attributes));
+      this._pending.push(() => this.insert(index, text2, attributes));
     }
   }
   /**
@@ -45841,15 +45798,15 @@ var YText = class _YText extends AbstractType {
    *
    * @public
    */
-  insertEmbed(index2, embed, attributes) {
+  insertEmbed(index, embed, attributes) {
     const y = this.doc;
     if (y !== null) {
       transact(y, (transaction) => {
-        const pos = findPosition(transaction, this, index2, !attributes);
+        const pos = findPosition(transaction, this, index, !attributes);
         insertText(transaction, this, pos, embed, attributes || {});
       });
     } else {
-      this._pending.push(() => this.insertEmbed(index2, embed, attributes || {}));
+      this._pending.push(() => this.insertEmbed(index, embed, attributes || {}));
     }
   }
   /**
@@ -45860,17 +45817,17 @@ var YText = class _YText extends AbstractType {
    *
    * @public
    */
-  delete(index2, length2) {
+  delete(index, length2) {
     if (length2 === 0) {
       return;
     }
     const y = this.doc;
     if (y !== null) {
       transact(y, (transaction) => {
-        deleteText(transaction, findPosition(transaction, this, index2, true), length2);
+        deleteText(transaction, findPosition(transaction, this, index, true), length2);
       });
     } else {
-      this._pending.push(() => this.delete(index2, length2));
+      this._pending.push(() => this.delete(index, length2));
     }
   }
   /**
@@ -45883,21 +45840,21 @@ var YText = class _YText extends AbstractType {
    *
    * @public
    */
-  format(index2, length2, attributes) {
+  format(index, length2, attributes) {
     if (length2 === 0) {
       return;
     }
     const y = this.doc;
     if (y !== null) {
       transact(y, (transaction) => {
-        const pos = findPosition(transaction, this, index2, false);
+        const pos = findPosition(transaction, this, index, false);
         if (pos.right === null) {
           return;
         }
         formatText(transaction, this, pos, length2, attributes);
       });
     } else {
-      this._pending.push(() => this.format(index2, length2, attributes));
+      this._pending.push(() => this.format(index, length2, attributes));
     }
   }
   /**
@@ -46207,13 +46164,13 @@ var YXmlFragment = class _YXmlFragment extends AbstractType {
    * @param {number} index The index to insert content at
    * @param {Array<YXmlElement|YXmlText>} content The array of content
    */
-  insert(index2, content) {
+  insert(index, content) {
     if (this.doc !== null) {
       transact(this.doc, (transaction) => {
-        typeListInsertGenerics(transaction, this, index2, content);
+        typeListInsertGenerics(transaction, this, index, content);
       });
     } else {
-      this._prelimContent.splice(index2, 0, ...content);
+      this._prelimContent.splice(index, 0, ...content);
     }
   }
   /**
@@ -46237,11 +46194,11 @@ var YXmlFragment = class _YXmlFragment extends AbstractType {
         /** @type {Array<any>} */
         this._prelimContent
       );
-      const index2 = ref === null ? 0 : pc.findIndex((el) => el === ref) + 1;
-      if (index2 === 0 && ref !== null) {
+      const index = ref === null ? 0 : pc.findIndex((el) => el === ref) + 1;
+      if (index === 0 && ref !== null) {
         throw create3("Reference item not found");
       }
-      pc.splice(index2, 0, ...content);
+      pc.splice(index, 0, ...content);
     }
   }
   /**
@@ -46250,13 +46207,13 @@ var YXmlFragment = class _YXmlFragment extends AbstractType {
    * @param {number} index Index at which to start deleting elements
    * @param {number} [length=1] The number of elements to remove. Defaults to 1.
    */
-  delete(index2, length2 = 1) {
+  delete(index, length2 = 1) {
     if (this.doc !== null) {
       transact(this.doc, (transaction) => {
-        typeListDelete(transaction, this, index2, length2);
+        typeListDelete(transaction, this, index, length2);
       });
     } else {
-      this._prelimContent.splice(index2, length2);
+      this._prelimContent.splice(index, length2);
     }
   }
   /**
@@ -46289,8 +46246,8 @@ var YXmlFragment = class _YXmlFragment extends AbstractType {
    * @param {number} index The index of the element to return from the YArray
    * @return {YXmlElement|YXmlText}
    */
-  get(index2) {
-    return typeListGet(this, index2);
+  get(index) {
+    return typeListGet(this, index);
   }
   /**
    * Returns a portion of this YXmlFragment into a JavaScript Array selected
@@ -48246,15 +48203,15 @@ if (glo[importIdentifier] === true) {
 glo[importIdentifier] = true;
 
 // ../node_modules/.bun/lib0@0.2.117/node_modules/lib0/indexeddb.js
-var rtop = (request2) => create4((resolve2, reject2) => {
-  request2.onerror = (event) => reject2(new Error(event.target.error));
-  request2.onsuccess = (event) => resolve2(event.target.result);
+var rtop = (request) => create4((resolve2, reject2) => {
+  request.onerror = (event) => reject2(new Error(event.target.error));
+  request.onsuccess = (event) => resolve2(event.target.result);
 });
 var openDB = (name, initDB) => create4((resolve2, reject2) => {
-  const request2 = indexedDB.open(name);
-  request2.onupgradeneeded = (event) => initDB(event.target.result);
-  request2.onerror = (event) => reject2(create3(event.target.error));
-  request2.onsuccess = (event) => {
+  const request = indexedDB.open(name);
+  request.onupgradeneeded = (event) => initDB(event.target.result);
+  request.onerror = (event) => reject2(create3(event.target.error));
+  request.onsuccess = (event) => {
     const db = event.target.result;
     db.onversionchange = () => {
       db.close();
@@ -48287,9 +48244,9 @@ var queryFirst = (store, query, direction) => {
   }, direction).then(() => first);
 };
 var getLastKey = (store, range = null) => queryFirst(store, range, "prev");
-var iterateOnRequest = (request2, f) => create4((resolve2, reject2) => {
-  request2.onerror = reject2;
-  request2.onsuccess = async (event) => {
+var iterateOnRequest = (request, f) => create4((resolve2, reject2) => {
+  request.onerror = reject2;
+  request.onsuccess = async (event) => {
     const cursor = event.target.result;
     if (cursor === null || await f(cursor) === false) {
       return resolve2();
@@ -49474,7 +49431,7 @@ var WebrtcProvider = class extends ObservableV2 {
 };
 
 // src/crdt/manager.ts
-var import_obsidian5 = require("obsidian");
+var import_obsidian6 = require("obsidian");
 
 // ../node_modules/.bun/color-hash@2.0.2/node_modules/color-hash/dist/esm.js
 var __classPrivateFieldSet = function(receiver, privateMap, value) {
@@ -49683,10 +49640,10 @@ var Sha256 = class {
     } else {
       msg = message;
     }
-    let index2 = 0;
+    let index = 0;
     const length2 = msg.length;
     const blocks2 = __classPrivateFieldGet(this, _blocks);
-    while (index2 < length2) {
+    while (index < length2) {
       let i;
       if (__classPrivateFieldGet(this, _hashed)) {
         __classPrivateFieldSet(this, _hashed, false);
@@ -49694,12 +49651,12 @@ var Sha256 = class {
         blocks2[16] = blocks2[1] = blocks2[2] = blocks2[3] = blocks2[4] = blocks2[5] = blocks2[6] = blocks2[7] = blocks2[8] = blocks2[9] = blocks2[10] = blocks2[11] = blocks2[12] = blocks2[13] = blocks2[14] = blocks2[15] = 0;
       }
       if (typeof msg !== "string") {
-        for (i = __classPrivateFieldGet(this, _start); index2 < length2 && i < 64; ++index2) {
-          blocks2[i >> 2] |= msg[index2] << SHIFT[i++ & 3];
+        for (i = __classPrivateFieldGet(this, _start); index < length2 && i < 64; ++index) {
+          blocks2[i >> 2] |= msg[index] << SHIFT[i++ & 3];
         }
       } else {
-        for (i = __classPrivateFieldGet(this, _start); index2 < length2 && i < 64; ++index2) {
-          let code = msg.charCodeAt(index2);
+        for (i = __classPrivateFieldGet(this, _start); index < length2 && i < 64; ++index) {
+          let code = msg.charCodeAt(index);
           if (code < 128) {
             blocks2[i >> 2] |= code << SHIFT[i++ & 3];
           } else if (code < 2048) {
@@ -49710,7 +49667,7 @@ var Sha256 = class {
             blocks2[i >> 2] |= (128 | code >> 6 & 63) << SHIFT[i++ & 3];
             blocks2[i >> 2] |= (128 | code & 63) << SHIFT[i++ & 3];
           } else {
-            code = 65536 + ((code & 1023) << 10 | msg.charCodeAt(++index2) & 1023);
+            code = 65536 + ((code & 1023) << 10 | msg.charCodeAt(++index) & 1023);
             blocks2[i >> 2] |= (240 | code >> 18) << SHIFT[i++ & 3];
             blocks2[i >> 2] |= (128 | code >> 12 & 63) << SHIFT[i++ & 3];
             blocks2[i >> 2] |= (128 | code >> 6 & 63) << SHIFT[i++ & 3];
@@ -50212,7 +50169,7 @@ var ClientCrdtManager = class {
     if (isNew && !hasRemoteHistory) {
       console.log(`[CRDT] Bootstrapping new doc from disk: ${filePath}`);
       const file = this.plugin.app.vault.getAbstractFileByPath(filePath);
-      if (file instanceof import_obsidian5.TFile) {
+      if (file instanceof import_obsidian6.TFile) {
         const content = await this.plugin.app.vault.read(file);
         this.initializeFromFile(doc2, filePath, content);
       }
@@ -50282,7 +50239,7 @@ var ClientCrdtManager = class {
     if (this.plugin.isFileOpen(filePath))
       return;
     const file = this.plugin.app.vault.getAbstractFileByPath(filePath);
-    if (!(file instanceof import_obsidian5.TFile))
+    if (!(file instanceof import_obsidian6.TFile))
       return;
     let newContent = "";
     if (filePath.endsWith(".md")) {
@@ -50310,10 +50267,10 @@ var ClientCrdtManager = class {
     this.releaseDoc(filePath);
     try {
       await new Promise((resolve2, reject2) => {
-        const request2 = indexedDB.deleteDatabase(filePath);
-        request2.onsuccess = () => resolve2();
-        request2.onerror = () => reject2(request2.error);
-        request2.onblocked = () => {
+        const request = indexedDB.deleteDatabase(filePath);
+        request.onsuccess = () => resolve2();
+        request.onerror = () => reject2(request.error);
+        request.onblocked = () => {
           console.warn(`[VaultSync/CRDT] IndexedDB delete blocked for ${filePath}`);
           resolve2();
         };
@@ -50374,7 +50331,7 @@ var ClientCrdtManager = class {
       this.releaseDoc(oldPath);
     }
     const file = this.plugin.app.vault.getAbstractFileByPath(newPath);
-    if (file instanceof import_obsidian5.TFile) {
+    if (file instanceof import_obsidian6.TFile) {
       const content = await this.plugin.app.vault.read(file);
       await this.updateCrdtFromFile(newPath, content);
     }
@@ -50457,7 +50414,7 @@ var SignalingManager = class {
 };
 
 // src/sync/hub-client.ts
-var import_obsidian6 = require("obsidian");
+var import_obsidian7 = require("obsidian");
 
 // src/sync/sync-buffer.ts
 var SyncBuffer = class {
@@ -50467,13 +50424,13 @@ var SyncBuffer = class {
   }
   async init() {
     return new Promise((resolve2, reject2) => {
-      const request2 = indexedDB.open(this.dbName, 1);
-      request2.onupgradeneeded = () => {
-        const db = request2.result;
+      const request = indexedDB.open(this.dbName, 1);
+      request.onupgradeneeded = () => {
+        const db = request.result;
         db.createObjectStore(this.storeName, { autoIncrement: true });
       };
-      request2.onsuccess = () => resolve2();
-      request2.onerror = () => reject2(request2.error);
+      request.onsuccess = () => resolve2();
+      request.onerror = () => reject2(request.error);
     });
   }
   async push(file, update) {
@@ -50483,9 +50440,9 @@ var SyncBuffer = class {
   }
   async getAll() {
     return new Promise((resolve2, reject2) => {
-      const request2 = indexedDB.open(this.dbName, 1);
-      request2.onsuccess = () => {
-        const db = request2.result;
+      const request = indexedDB.open(this.dbName, 1);
+      request.onsuccess = () => {
+        const db = request.result;
         const transaction = db.transaction(this.storeName, "readonly");
         const store = transaction.objectStore(this.storeName);
         const getAllRequest = store.getAll();
@@ -50508,9 +50465,9 @@ var SyncBuffer = class {
   }
   runTransaction(mode, action) {
     return new Promise((resolve2, reject2) => {
-      const request2 = indexedDB.open(this.dbName, 1);
-      request2.onsuccess = () => {
-        const db = request2.result;
+      const request = indexedDB.open(this.dbName, 1);
+      request.onsuccess = () => {
+        const db = request.result;
         const transaction = db.transaction(this.storeName, mode);
         action(transaction.objectStore(this.storeName));
         transaction.oncomplete = () => resolve2();
@@ -50625,7 +50582,7 @@ var HubClient = class {
           this.register();
         } else {
           console.error(`[VaultSync/WS] Auth failed  reason=${msg.message}`);
-          new import_obsidian6.Notice(`Sync Hub Auth Failed: ${msg.message}`);
+          new import_obsidian7.Notice(`Sync Hub Auth Failed: ${msg.message}`);
         }
         break;
       case "crdt_update":
@@ -50645,7 +50602,7 @@ var HubClient = class {
         break;
       case "alert":
         this.plugin.logSyncEvent("alert", `Hub Alert: ${msg.message}`, "warn", `Kind: ${msg.kind}`);
-        new import_obsidian6.Notice(`Sync Hub Alert: ${msg.message}`);
+        new import_obsidian7.Notice(`Sync Hub Alert: ${msg.message}`);
         break;
     }
   }
@@ -50716,7 +50673,7 @@ var HubClient = class {
 };
 
 // src/sync/onboarding-manager.ts
-var import_obsidian7 = require("obsidian");
+var import_obsidian8 = require("obsidian");
 var OnboardingManager = class {
   constructor(plugin) {
     __publicField(this, "plugin");
@@ -50738,7 +50695,7 @@ var OnboardingManager = class {
   async bootstrapFirstDevice() {
     const files = this.plugin.app.vault.getFiles();
     const editableFiles = files.filter((f) => this.isEditable(f));
-    new import_obsidian7.Notice(`Bootstrapping CRDT state for ${editableFiles.length} files...`);
+    new import_obsidian8.Notice(`Bootstrapping CRDT state for ${editableFiles.length} files...`);
     let count2 = 0;
     for (const file of editableFiles) {
       const content = await this.plugin.app.vault.read(file);
@@ -50748,12 +50705,12 @@ var OnboardingManager = class {
         await new Promise((resolve2) => setTimeout(resolve2, 0));
       }
     }
-    new import_obsidian7.Notice("Authoritative CRDT state generated successfully.");
+    new import_obsidian8.Notice("Authoritative CRDT state generated successfully.");
   }
   async onboardNewDevice() {
     const files = this.plugin.app.vault.getFiles();
     const editableFiles = files.filter((f) => this.isEditable(f));
-    new import_obsidian7.Notice(`Requesting CRDT state from hub for ${editableFiles.length} files...`);
+    new import_obsidian8.Notice(`Requesting CRDT state from hub for ${editableFiles.length} files...`);
   }
   isEditable(file) {
     const ext = file.extension.toLowerCase();
@@ -51300,7 +51257,7 @@ var DEFAULT_SETTINGS = {
   autoPullIntervalMin: 5,
   allowGitOnCellular: false
 };
-var VaultSyncPlugin = class extends import_obsidian8.Plugin {
+var VaultSyncPlugin = class extends import_obsidian9.Plugin {
   constructor(app, manifest) {
     super(app, manifest);
     __publicField(this, "settings", DEFAULT_SETTINGS);
@@ -51329,7 +51286,7 @@ var VaultSyncPlugin = class extends import_obsidian8.Plugin {
       if (detected) {
         this.settings.gitRemoteUrl = detected;
         await this.saveData(this.settings);
-        new import_obsidian8.Notice("Auto-detected Git remote URL from .git/config");
+        new import_obsidian9.Notice("Auto-detected Git remote URL from .git/config");
       }
     }
     await GitUtils.ensureGitIgnore(this.app);
@@ -51353,7 +51310,7 @@ var VaultSyncPlugin = class extends import_obsidian8.Plugin {
     );
     this.registerEvent(
       this.app.workspace.on("file-open", async (file) => {
-        if (file instanceof import_obsidian8.TFile && this.isEditable(file)) {
+        if (file instanceof import_obsidian9.TFile && this.isEditable(file)) {
           await this.updateCollabExtension(file);
         }
       })
@@ -51379,7 +51336,7 @@ var VaultSyncPlugin = class extends import_obsidian8.Plugin {
         const file = this.app.workspace.getActiveFile();
         if (file) {
           await this.crdtManager.resetDoc(file.path);
-          new import_obsidian8.Notice(`CRDT state reset for ${file.name}. Reloading...`);
+          new import_obsidian9.Notice(`CRDT state reset for ${file.name}. Reloading...`);
           await this.updateCollabExtension(file);
         }
       }
@@ -51388,9 +51345,9 @@ var VaultSyncPlugin = class extends import_obsidian8.Plugin {
       id: "force-git-sync",
       name: "Force Git Sync (Fetch & Merge)",
       callback: async () => {
-        new import_obsidian8.Notice("Starting Git sync...");
+        new import_obsidian9.Notice("Starting Git sync...");
         await this.orchestrator.forceGitSync();
-        new import_obsidian8.Notice("Git sync complete.");
+        new import_obsidian9.Notice("Git sync complete.");
       }
     });
     this.registerView(
@@ -51479,7 +51436,7 @@ var VaultSyncPlugin = class extends import_obsidian8.Plugin {
     const RELEASE_URL = "https://raw.githubusercontent.com/Prashanth-BC/fieldbook-release/main/real-sync/client/";
     const files = ["main.js", "manifest.json", "styles.css"];
     const pluginDir = this.app.vault.configDir + "/plugins/" + this.manifest.id;
-    new import_obsidian8.Notice("Checking for updates...");
+    new import_obsidian9.Notice("Checking for updates...");
     try {
       const downloadedFiles = /* @__PURE__ */ new Map();
       for (const file of files) {
@@ -51493,11 +51450,11 @@ var VaultSyncPlugin = class extends import_obsidian8.Plugin {
         const filePath = pluginDir + "/" + file;
         await this.app.vault.adapter.writeBinary(filePath, data);
       }
-      new import_obsidian8.Notice("Vault Sync updated successfully! Please reload the plugin or restart Obsidian.");
+      new import_obsidian9.Notice("Vault Sync updated successfully! Please reload the plugin or restart Obsidian.");
       this.logSyncEvent("info", "Plugin self-updated to latest release version.", "info");
     } catch (err) {
       console.error("[VaultSync] Update failed:", err);
-      new import_obsidian8.Notice(`Update failed: ${err.message}`);
+      new import_obsidian9.Notice(`Update failed: ${err.message}`);
       this.logSyncEvent("error", `Self-update failed: ${err.message}`, "error");
     }
   }
@@ -51505,7 +51462,7 @@ var VaultSyncPlugin = class extends import_obsidian8.Plugin {
     let open = false;
     this.app.workspace.iterateAllLeaves((leaf) => {
       var _a;
-      if (leaf.view instanceof import_obsidian8.MarkdownView && ((_a = leaf.view.file) == null ? void 0 : _a.path) === filePath) {
+      if (leaf.view instanceof import_obsidian9.MarkdownView && ((_a = leaf.view.file) == null ? void 0 : _a.path) === filePath) {
         open = true;
       }
     });
@@ -51527,7 +51484,7 @@ var VaultSyncPlugin = class extends import_obsidian8.Plugin {
       let found = false;
       this.app.workspace.iterateAllLeaves((leaf) => {
         var _a;
-        if (leaf.view instanceof import_obsidian8.MarkdownView && leaf.view.file === file) {
+        if (leaf.view instanceof import_obsidian9.MarkdownView && leaf.view.file === file) {
           const editor = leaf.view.editor.cm || ((_a = leaf.view.sourceMode) == null ? void 0 : _a.cmEditor) || leaf.view.editorView;
           if (editor && typeof editor.dispatch === "function") {
             const undoManager = new UndoManager(text2);
@@ -51551,7 +51508,7 @@ var VaultSyncPlugin = class extends import_obsidian8.Plugin {
     const content = await this.app.vault.read(file);
     await this.crdtManager.updateCrdtFromFile(file.path, content);
     await this.updateCollabExtension(file);
-    new import_obsidian8.Notice(`CRDT state rebuilt for ${file.name}`);
+    new import_obsidian9.Notice(`CRDT state rebuilt for ${file.name}`);
   }
 };
 /*! Bundled license information:
