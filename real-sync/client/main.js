@@ -50141,8 +50141,10 @@ var ClientCrdtManager = class {
         console.error(`[VaultSync/WebRTC] Signaling error  room=${roomName}  error=${err.message}`);
       });
       const fallbackTimer = setInterval(() => {
+        var _a;
         const states = awareness.getStates();
-        if (states.size > 1 && provider.webrtcConns.size === 0) {
+        const webrtcConns = (_a = provider.room) == null ? void 0 : _a.webrtcConns;
+        if (states.size > 1 && webrtcConns && webrtcConns.size === 0) {
           console.warn(`[VaultSync/WebRTC] ICE failed \u2014 falling back to server relay  room=${roomName}`);
         }
       }, 1e4);
