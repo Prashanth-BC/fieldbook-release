@@ -38651,12 +38651,16 @@ var GitUtils = class {
         dir,
         trees: [git.TREE({ ref: headSha }), git.TREE({ ref: fetchHeadSha })],
         map: async function(filepath, [head, fetchHead]) {
+          var _a;
           if (filepath === ".")
             return;
           const headOid = await (head == null ? void 0 : head.oid());
           const fetchOid = await (fetchHead == null ? void 0 : fetchHead.oid());
           if (headOid !== fetchOid) {
-            return { filepath, fetchOid };
+            const type = await ((_a = fetchHead || head) == null ? void 0 : _a.type());
+            if (type === "blob") {
+              return { filepath, fetchOid };
+            }
           }
         }
       });
