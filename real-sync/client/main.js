@@ -50074,7 +50074,6 @@ var ClientCrdtManager = class {
       name: deviceName,
       color: getStableColor(deviceId)
     });
-    console.log(`[VaultSync/WebRTC] Awareness created  path=${filePath}`);
     const activeClients = /* @__PURE__ */ new Set();
     awareness.on("update", ({ added, updated, removed }) => {
       const states = awareness.getStates();
@@ -50084,35 +50083,29 @@ var ClientCrdtManager = class {
           if (activeClients.has(id2)) {
             activeClients.delete(id2);
             disconnectedCount++;
-            console.log(`[VaultSync/WebRTC] Peer disconnected  room=${this.plugin.settings.vaultId}/${filePath}  peerId=${id2}  peers=${activeClients.size}`);
           }
         }
         if (disconnectedCount > 0) {
-          console.log(`[VaultSync/WebRTC] Awareness cleared  path=${filePath}  reason=peer_disconnect  remaining=${activeClients.size}`);
+          console.log(`[VaultSync/WebRTC] Peer disconnected  path=${filePath}  remaining=${activeClients.size}`);
         }
       }
       const allAddedOrUpdated = [...added, ...updated];
       for (const id2 of allAddedOrUpdated) {
         const state = states.get(id2);
         if (state == null ? void 0 : state.user) {
-          const isNew = !activeClients.has(id2);
-          if (isNew) {
+          if (!activeClients.has(id2)) {
             activeClients.add(id2);
-            console.log(`[VaultSync/WebRTC] Peer connected  room=${this.plugin.settings.vaultId}/${filePath}  peerId=${id2}  from=${state.user.name || "Unknown"}  peers=${activeClients.size}`);
+            console.log(`[VaultSync/WebRTC] Peer connected  path=${filePath}  from=${state.user.name || "Unknown"}  peers=${activeClients.size}`);
           }
         }
       }
     });
     doc2.on("update", (update, origin) => {
-      var _a;
-      const originName = typeof origin === "string" ? origin : ((_a = origin == null ? void 0 : origin.constructor) == null ? void 0 : _a.name) || typeof origin;
       if (origin !== "local-file-sync" && origin !== "sync-hub") {
-        console.log(`[VaultSync/CRDT] Local update  path=${filePath}  bytes=${update.byteLength}`);
         this.plugin.hubClient.sendUpdate(filePath, update);
       }
       if (origin !== "local-file-sync" && !this.plugin.isFileOpen(filePath)) {
-        console.log(`[VaultSync/CRDT] Remote update applied  path=${filePath}  bytes=${update.byteLength}`);
-        this.plugin.logSyncEvent("crdt_merge", `Merging remote CRDT update for ${filePath}`, "info", `Origin: ${originName}`, [filePath]);
+        this.plugin.logSyncEvent("crdt_merge", `Merging remote CRDT update for ${filePath}`, "info", void 0, [filePath]);
         this.debouncedMaterialize(filePath, doc2);
       }
     });
@@ -50124,45 +50117,26 @@ var ClientCrdtManager = class {
       const provider = new WebrtcProvider(roomName, doc2, {
         signaling: [signalingUrl],
         awareness
-        // Pass awareness to provider
       });
       this.providers.set(filePath, provider);
       console.log(`[VaultSync/WebRTC] Provider created  room=${roomName}`);
-      provider.on("status", (event) => {
-        if (event.status === "connected") {
-          console.log(`[VaultSync/WebRTC] Connected to signaling  room=${roomName}`);
-        }
-      });
-      provider.on("peers", (event) => {
-        const peerCount = event.webrtcConns.size;
-        console.log(`[VaultSync/WebRTC] Peers updated  room=${roomName}  count=${peerCount}`);
-      });
-      provider.on("error", (err) => {
-        console.error(`[VaultSync/WebRTC] Signaling error  room=${roomName}  error=${err.message}`);
-      });
       const fallbackTimer = setInterval(() => {
-        var _a;
-        const states = awareness.getStates();
-        const webrtcConns = (_a = provider.room) == null ? void 0 : _a.webrtcConns;
-        if (states.size > 1 && webrtcConns && webrtcConns.size === 0) {
+        var _a, _b, _c;
+        const peerCount = (_c = (_b = (_a = provider.room) == null ? void 0 : _a.webrtcConns) == null ? void 0 : _b.size) != null ? _c : 0;
+        if (awareness.getStates().size > 1 && peerCount === 0) {
           console.warn(`[VaultSync/WebRTC] ICE failed \u2014 falling back to server relay  room=${roomName}`);
         }
-      }, 1e4);
+      }, 15e3);
       this.fallbackMonitoringTimers.set(filePath, fallbackTimer);
     }
     await new Promise((resolve2) => {
       persistence.once("synced", () => resolve2());
     });
-    console.log(`[VaultSync/CRDT] Requesting catch-up from Sync Hub for ${filePath}`);
     const hubState = await this.plugin.hubClient.requestFullState(filePath);
     if (hubState && hubState.length > 0) {
       applyUpdate(doc2, hubState, "sync-hub");
-      console.log(`[VaultSync/CRDT] Catch-up complete from Sync Hub for ${filePath}`);
-    } else {
-      console.log(`[VaultSync/CRDT] No state found on Hub for ${filePath} or Hub unreachable.`);
     }
     await this.bootstrapDoc(filePath, doc2, persistence);
-    console.log(`[VaultSync/CRDT] Doc opened  path=${filePath}  activeDocs=${this.docs.size}`);
     return doc2;
   }
   applyRemoteUpdate(filePath, update, origin) {
