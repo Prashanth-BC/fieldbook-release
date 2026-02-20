@@ -31630,8 +31630,20 @@ __export(main_exports, {
   default: () => VaultSyncPlugin
 });
 module.exports = __toCommonJS(main_exports);
+
+// src/polyfills.ts
 var import_buffer = __toESM(require_buffer(), 1);
 var path = __toESM(require_path_browserify(), 1);
+window.Buffer = import_buffer.Buffer;
+window.path = path;
+window.process = {
+  env: { NODE_ENV: "production" },
+  nextTick: (fn) => setTimeout(fn, 0),
+  browser: true
+};
+console.log("[VaultSync] Polyfills loaded");
+
+// src/main.ts
 var import_obsidian6 = require("obsidian");
 
 // src/ui/status-bar.ts
@@ -31937,37 +31949,47 @@ var web_default = index;
 
 // src/git/vault-fs.ts
 function createVaultFs(adapter) {
-  return {
+  const fs = {
     async readFile(path2, options) {
-      const data = await adapter.readBinary(path2);
-      return new Uint8Array(data);
+      try {
+        const data = await adapter.readBinary(this.normalizePath(path2));
+        return new Uint8Array(data);
+      } catch (e) {
+        throw { code: "ENOENT", message: "File not found" };
+      }
     },
     async writeFile(path2, data, options) {
+      const normalized = this.normalizePath(path2);
       if (typeof data === "string") {
-        await adapter.write(path2, data);
+        await adapter.write(normalized, data);
       } else {
-        await adapter.writeBinary(path2, data.buffer);
+        await adapter.writeBinary(normalized, data.buffer);
       }
     },
     async unlink(path2) {
-      await adapter.remove(path2);
+      await adapter.remove(this.normalizePath(path2));
     },
     async readdir(path2) {
-      const res = await adapter.list(path2);
-      const all2 = [...res.files, ...res.folders];
-      return all2.map((p) => {
-        const parts = p.split("/");
-        return parts[parts.length - 1];
-      });
+      try {
+        const normalized = this.normalizePath(path2) || ".";
+        const res = await adapter.list(normalized);
+        const all2 = [...res.files, ...res.folders];
+        return all2.map((p) => {
+          const parts = p.split("/");
+          return parts[parts.length - 1];
+        });
+      } catch (e) {
+        throw { code: "ENOENT", message: "Directory not found" };
+      }
     },
     async mkdir(path2) {
-      await adapter.mkdir(path2);
+      await adapter.mkdir(this.normalizePath(path2));
     },
     async rmdir(path2) {
-      await adapter.remove(path2);
+      await adapter.remove(this.normalizePath(path2));
     },
     async stat(path2) {
-      const s = await adapter.stat(path2);
+      const s = await adapter.stat(this.normalizePath(path2));
       if (!s) {
         throw { code: "ENOENT" };
       }
@@ -31975,7 +31997,6 @@ function createVaultFs(adapter) {
         type: s.type === "folder" ? "directory" : "file",
         size: s.size,
         mtimeMs: s.mtime,
-        // isomorphic-git uses these methods
         isDirectory: () => s.type === "folder",
         isFile: () => s.type === "file",
         isSymbolicLink: () => false
@@ -31983,8 +32004,22 @@ function createVaultFs(adapter) {
     },
     async lstat(path2) {
       return this.stat(path2);
+    },
+    async read(fd, buffer, offset, length2, position3) {
+      throw new Error("FS.read not implemented");
+    },
+    async write(fd, buffer, offset, length2, position3) {
+      throw new Error("FS.write not implemented");
+    },
+    normalizePath(path2) {
+      let p = path2;
+      while (p.startsWith("/"))
+        p = p.substring(1);
+      return p;
     }
   };
+  fs.promises = fs;
+  return fs;
 }
 
 // src/utils/git-utils.ts
@@ -43444,6 +43479,7 @@ var ClientCrdtManager = class {
         const currentText = text2.toString().replace(/\r\n/g, "\n");
         const normalizedContent = content.replace(/\r\n/g, "\n");
         if (currentText !== normalizedContent) {
+          console.log(`[VaultSync/CRDT] Local file diff detected for ${filePath}. Lengths: doc=${currentText.length} file=${normalizedContent.length}`);
           let i = 0;
           while (i < currentText.length && i < normalizedContent.length && currentText[i] === normalizedContent[i]) {
             i++;
@@ -48825,10 +48861,10 @@ try {
 }
 var extensions;
 var extensionClasses;
-var Buffer2 = typeof globalThis === "object" && globalThis.Buffer;
-var hasNodeBuffer = typeof Buffer2 !== "undefined";
-var ByteArrayAllocate = hasNodeBuffer ? Buffer2.allocUnsafeSlow : Uint8Array;
-var ByteArray = hasNodeBuffer ? Buffer2 : Uint8Array;
+var Buffer3 = typeof globalThis === "object" && globalThis.Buffer;
+var hasNodeBuffer = typeof Buffer3 !== "undefined";
+var ByteArrayAllocate = hasNodeBuffer ? Buffer3.allocUnsafeSlow : Uint8Array;
+var ByteArray = hasNodeBuffer ? Buffer3 : Uint8Array;
 var MAX_STRUCTURES = 256;
 var MAX_BUFFER_SIZE = hasNodeBuffer ? 4294967296 : 2144337920;
 var throwOnIterable;
@@ -49951,7 +49987,7 @@ function typedArrayEncoder(tag, size2) {
       let length2 = typedArray.byteLength;
       let offset = typedArray.byteOffset || 0;
       let buffer = typedArray.buffer || typedArray;
-      encode2(hasNodeBuffer ? Buffer2.from(buffer, offset, length2) : new Uint8Array(buffer, offset, length2));
+      encode2(hasNodeBuffer ? Buffer3.from(buffer, offset, length2) : new Uint8Array(buffer, offset, length2));
     }
   };
 }
@@ -50799,12 +50835,6 @@ var yCollab = (ytext, awareness, { undoManager = new UndoManager(ytext) } = {}) 
 
 // src/main.ts
 var import_state = require("@codemirror/state");
-window.Buffer = import_buffer.Buffer;
-window.path = path;
-window.process = {
-  env: { NODE_ENV: "production" },
-  nextTick: (fn) => setTimeout(fn, 0)
-};
 var DEFAULT_SETTINGS = {
   syncHubUrl: "",
   sharedSecret: "",
