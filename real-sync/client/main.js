@@ -38507,12 +38507,21 @@ function createVaultFs(adapter) {
       if (!s) {
         throw { code: "ENOENT" };
       }
+      const isDir = s.type === "folder";
+      const mode = isDir ? 16877 : 33188;
       return {
-        type: s.type === "folder" ? "directory" : "file",
+        type: isDir ? "directory" : "file",
         size: s.size,
         mtimeMs: s.mtime,
-        isDirectory: () => s.type === "folder",
-        isFile: () => s.type === "file",
+        ctimeMs: s.mtime,
+        // Obsidian doesn't expose ctime, use mtime
+        mode,
+        ino: 0,
+        dev: 0,
+        uid: 0,
+        gid: 0,
+        isDirectory: () => isDir,
+        isFile: () => !isDir,
         isSymbolicLink: () => false
       };
     },
@@ -38521,12 +38530,20 @@ function createVaultFs(adapter) {
       if (!s) {
         throw { code: "ENOENT" };
       }
+      const isDir = s.type === "folder";
+      const mode = isDir ? 16877 : 33188;
       return {
-        type: s.type === "folder" ? "directory" : "file",
+        type: isDir ? "directory" : "file",
         size: s.size,
         mtimeMs: s.mtime,
-        isDirectory: () => s.type === "folder",
-        isFile: () => s.type === "file",
+        ctimeMs: s.mtime,
+        mode,
+        ino: 0,
+        dev: 0,
+        uid: 0,
+        gid: 0,
+        isDirectory: () => isDir,
+        isFile: () => !isDir,
         isSymbolicLink: () => false
       };
     },
@@ -38610,15 +38627,25 @@ var GitUtils = class {
         onAuth: () => ({ username: token || "" })
       });
       const headSha = await git.resolveRef({ fs, dir, ref: "HEAD" });
-      const fetchHeadSha = fetchResult.fetchHead;
+      let fetchHeadSha = fetchResult.fetchHead;
       if (!fetchHeadSha) {
-        console.log("[VaultSync/Git] No remote changes found or already up to date");
-        return;
+        try {
+          fetchHeadSha = await git.resolveRef({ fs, dir, ref: `refs/remotes/origin/${branch}` });
+        } catch (e) {
+          console.log("[VaultSync/Git] No remote branch found yet.");
+          return;
+        }
+      }
+      if (fetchHeadSha && fetchHeadSha.includes("	")) {
+        fetchHeadSha = fetchHeadSha.split("	")[0].trim();
+      } else if (fetchHeadSha) {
+        fetchHeadSha = fetchHeadSha.trim();
       }
       if (headSha === fetchHeadSha) {
         console.log("[VaultSync/Git] Already up to date");
         return;
       }
+      console.log(`[VaultSync/Git] Merging changes from ${fetchHeadSha}`);
       const changes = await git.walk({
         fs,
         dir,
