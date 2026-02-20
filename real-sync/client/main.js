@@ -50113,7 +50113,9 @@ var ClientCrdtManager = class {
         this.debouncedMaterialize(filePath, doc2);
       }
     });
-    const persistence = new IndexeddbPersistence(filePath, doc2);
+    const vaultId = this.plugin.settings.vaultId || "default";
+    const dbName = `vault-sync/${vaultId}/${filePath}`;
+    const persistence = new IndexeddbPersistence(dbName, doc2);
     this.persistence.set(filePath, persistence);
     const signalingUrl = this.plugin.signalingManager.getSignalingUrl();
     if (signalingUrl) {
@@ -50274,15 +50276,17 @@ var ClientCrdtManager = class {
     }
   }
   async resetDoc(filePath) {
-    console.log(`[VaultSync/CRDT] Resetting CRDT state for ${filePath}`);
+    const vaultId = this.plugin.settings.vaultId || "default";
+    const dbName = `vault-sync/${vaultId}/${filePath}`;
+    console.log(`[VaultSync/CRDT] Resetting CRDT state for ${filePath} (DB: ${dbName})`);
     this.releaseDoc(filePath);
     try {
       await new Promise((resolve2, reject2) => {
-        const request = indexedDB.deleteDatabase(filePath);
+        const request = indexedDB.deleteDatabase(dbName);
         request.onsuccess = () => resolve2();
         request.onerror = () => reject2(request.error);
         request.onblocked = () => {
-          console.warn(`[VaultSync/CRDT] IndexedDB delete blocked for ${filePath}`);
+          console.warn(`[VaultSync/CRDT] IndexedDB delete blocked for ${dbName}`);
           resolve2();
         };
       });
@@ -50429,16 +50433,19 @@ var import_obsidian7 = require("obsidian");
 
 // src/sync/sync-buffer.ts
 var SyncBuffer = class {
-  constructor() {
-    __publicField(this, "dbName", "vault-sync-buffer");
+  constructor(vaultId) {
+    __publicField(this, "dbName");
     __publicField(this, "storeName", "updates");
+    this.dbName = `vault-sync/${vaultId}/buffer`;
   }
   async init() {
     return new Promise((resolve2, reject2) => {
       const request = indexedDB.open(this.dbName, 1);
       request.onupgradeneeded = () => {
         const db = request.result;
-        db.createObjectStore(this.storeName, { autoIncrement: true });
+        if (!db.objectStoreNames.contains(this.storeName)) {
+          db.createObjectStore(this.storeName, { autoIncrement: true });
+        }
       };
       request.onsuccess = () => resolve2();
       request.onerror = () => reject2(request.error);
@@ -50502,10 +50509,17 @@ var HubClient = class {
     // 5 minutes
     __publicField(this, "HEARTBEAT_INTERVAL_MS", 3e4);
     // 30s
-    __publicField(this, "syncBuffer", new SyncBuffer());
+    __publicField(this, "_syncBuffer", null);
     __publicField(this, "pendingRequests", /* @__PURE__ */ new Map());
     this.plugin = plugin;
-    this.syncBuffer.init().catch(console.error);
+  }
+  async getSyncBuffer() {
+    if (!this._syncBuffer) {
+      const vaultId = this.plugin.settings.vaultId || "default";
+      this._syncBuffer = new SyncBuffer(vaultId);
+      await this._syncBuffer.init();
+    }
+    return this._syncBuffer;
   }
   connect() {
     const { syncHubUrl, sharedSecret, vaultId } = this.plugin.settings;
@@ -50570,13 +50584,14 @@ var HubClient = class {
   async flushBuffer() {
     if (!this.authenticated || !this.ws || this.ws.readyState !== WebSocket.OPEN)
       return;
-    const updates = await this.syncBuffer.getAll();
+    const buffer = await this.getSyncBuffer();
+    const updates = await buffer.getAll();
     if (updates.length > 0) {
       console.log(`[VaultSync/Hub] Flushing ${updates.length} persistent buffered updates...`);
       for (const { id: id2, file, update } of updates) {
         const msg = { type: "crdt_update", file, update };
         this.ws.send(serializeMessage(msg));
-        await this.syncBuffer.remove(id2);
+        await buffer.remove(id2);
       }
     }
   }
@@ -50619,7 +50634,8 @@ var HubClient = class {
   }
   async sendUpdate(file, update) {
     if (!this.ws || !this.authenticated || this.ws.readyState !== WebSocket.OPEN) {
-      await this.syncBuffer.push(file, update);
+      const buffer = await this.getSyncBuffer();
+      await buffer.push(file, update);
       return;
     }
     const msg = {
