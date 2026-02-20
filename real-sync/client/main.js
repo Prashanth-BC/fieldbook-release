@@ -27242,7 +27242,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
         throw err;
       }
     }
-    async function remove({
+    async function remove2({
       fs: _fs,
       dir,
       gitdir = join(dir, ".git"),
@@ -28260,7 +28260,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
       oid,
       mode,
       add: add3,
-      remove: remove2,
+      remove: remove3,
       force
     }) {
       try {
@@ -28269,7 +28269,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
         assertParameter("filepath", filepath);
         const fs = new FileSystem(_fs);
         const updatedGitdir = await discoverGitdir({ fsp: fs, dotgit: gitdir });
-        if (remove2) {
+        if (remove3) {
           return await GitIndexManager.acquire(
             { fs, gitdir: updatedGitdir, cache },
             async function(index3) {
@@ -28618,7 +28618,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
       readObject,
       readTag,
       readTree,
-      remove,
+      remove: remove2,
       removeNote,
       renameBranch,
       resetIndex,
@@ -28690,7 +28690,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
     exports.readObject = readObject;
     exports.readTag = readTag;
     exports.readTree = readTree;
-    exports.remove = remove;
+    exports.remove = remove2;
     exports.removeNote = removeNote;
     exports.renameBranch = renameBranch;
     exports.resetIndex = resetIndex;
@@ -31644,15 +31644,16 @@ window.process = {
 console.log("[VaultSync] Polyfills loaded");
 
 // src/main.ts
-var import_obsidian6 = require("obsidian");
+var import_obsidian8 = require("obsidian");
 
 // src/ui/status-bar.ts
 var import_obsidian = require("obsidian");
 var StatusBar = class {
-  constructor(statusBarItemEl) {
+  constructor(statusBarItemEl, onClick) {
     __publicField(this, "el");
     this.el = statusBarItemEl;
     this.el.addClass("vault-sync-status-bar");
+    this.el.onclick = onClick;
   }
   update(state) {
     var _a, _b;
@@ -31672,6 +31673,13 @@ var StatusBar = class {
         this.el.removeClass("is-synced", "is-offline", "is-error", "is-reconnecting");
         const progressMsg = state.progress === -1 ? " (Catch-up)" : "";
         (0, import_obsidian.setTooltip)(this.el, `Vault Sync: Syncing${progressMsg}...`);
+        break;
+      case "syncing-catchup":
+        (0, import_obsidian.setIcon)(iconEl, "refresh-cw");
+        iconEl.addClass("fa-spin");
+        this.el.addClass("is-syncing");
+        this.el.removeClass("is-synced", "is-offline", "is-error", "is-reconnecting");
+        (0, import_obsidian.setTooltip)(this.el, "Vault Sync: Catching up with remote changes...");
         break;
       case "reconnecting":
         (0, import_obsidian.setIcon)(iconEl, "loader-2");
@@ -31823,6 +31831,19 @@ var VaultSyncSettingTab = class extends import_obsidian2.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
+    containerEl.createEl("h3", { text: "Maintenance" });
+    new import_obsidian2.Setting(containerEl).setName("Update Plugin").setDesc("Download and install the latest release artifacts from GitHub.").addButton(
+      (button) => button.setButtonText("Update Now").setTooltip("Fetches main.js, manifest.json, and styles.css from the release repository.").onClick(async () => {
+        button.setDisabled(true);
+        button.setButtonText("Updating...");
+        try {
+          await this.plugin.updatePlugin();
+        } finally {
+          button.setDisabled(false);
+          button.setButtonText("Update Now");
+        }
+      })
+    );
   }
   hide() {
     var _a;
@@ -31843,6 +31864,6519 @@ var VaultSyncSettingTab = class extends import_obsidian2.PluginSettingTab {
     );
   }
 };
+
+// src/ui/log-panel.ts
+var import_obsidian3 = require("obsidian");
+var VIEW_TYPE_SYNC_LOG = "vault-sync-log-view";
+var SyncLogView = class extends import_obsidian3.ItemView {
+  constructor(leaf, plugin) {
+    super(leaf);
+    __publicField(this, "plugin");
+    this.plugin = plugin;
+  }
+  getViewType() {
+    return VIEW_TYPE_SYNC_LOG;
+  }
+  getDisplayText() {
+    return "Sync Log";
+  }
+  getIcon() {
+    return "list-ordered";
+  }
+  async onOpen() {
+    this.render();
+    this.registerEvent(
+      this.app.workspace.on("vault-sync:log-update", () => this.render())
+    );
+  }
+  render() {
+    const container = this.contentEl;
+    container.empty();
+    container.addClass("vault-sync-log-container");
+    const header = container.createDiv({ cls: "vault-sync-log-header" });
+    header.createEl("h4", { text: "Sync Event History" });
+    const clearBtn = header.createEl("button", { text: "Clear" });
+    clearBtn.onclick = () => {
+      this.plugin.syncLogs = [];
+      this.render();
+    };
+    const logList = container.createDiv({ cls: "vault-sync-log-list" });
+    if (this.plugin.syncLogs.length === 0) {
+      logList.createDiv({ cls: "vault-sync-log-empty", text: "No sync events recorded." });
+      return;
+    }
+    for (const event of this.plugin.syncLogs) {
+      const entry = logList.createDiv({ cls: `vault-sync-log-entry is-${event.severity}` });
+      const time = new Date(event.timestamp).toLocaleTimeString();
+      const meta = entry.createDiv({ cls: "vault-sync-log-meta" });
+      meta.createSpan({ cls: "vault-sync-log-time", text: time });
+      meta.createSpan({ cls: "vault-sync-log-type", text: event.type.toUpperCase() });
+      entry.createDiv({ cls: "vault-sync-log-msg", text: event.message });
+      if (event.details) {
+        entry.createDiv({ cls: "vault-sync-log-details", text: event.details });
+      }
+      if (event.files && event.files.length > 0) {
+        const filesEl = entry.createDiv({ cls: "vault-sync-log-files" });
+        filesEl.createSpan({ text: "Files: " });
+        filesEl.createSpan({ text: event.files.join(", "), cls: "file-list" });
+      }
+    }
+  }
+};
+
+// ../node_modules/.bun/zod@3.25.76/node_modules/zod/v3/external.js
+var external_exports = {};
+__export(external_exports, {
+  BRAND: () => BRAND,
+  DIRTY: () => DIRTY,
+  EMPTY_PATH: () => EMPTY_PATH,
+  INVALID: () => INVALID,
+  NEVER: () => NEVER,
+  OK: () => OK,
+  ParseStatus: () => ParseStatus,
+  Schema: () => ZodType,
+  ZodAny: () => ZodAny,
+  ZodArray: () => ZodArray,
+  ZodBigInt: () => ZodBigInt,
+  ZodBoolean: () => ZodBoolean,
+  ZodBranded: () => ZodBranded,
+  ZodCatch: () => ZodCatch,
+  ZodDate: () => ZodDate,
+  ZodDefault: () => ZodDefault,
+  ZodDiscriminatedUnion: () => ZodDiscriminatedUnion,
+  ZodEffects: () => ZodEffects,
+  ZodEnum: () => ZodEnum,
+  ZodError: () => ZodError,
+  ZodFirstPartyTypeKind: () => ZodFirstPartyTypeKind,
+  ZodFunction: () => ZodFunction,
+  ZodIntersection: () => ZodIntersection,
+  ZodIssueCode: () => ZodIssueCode,
+  ZodLazy: () => ZodLazy,
+  ZodLiteral: () => ZodLiteral,
+  ZodMap: () => ZodMap,
+  ZodNaN: () => ZodNaN,
+  ZodNativeEnum: () => ZodNativeEnum,
+  ZodNever: () => ZodNever,
+  ZodNull: () => ZodNull,
+  ZodNullable: () => ZodNullable,
+  ZodNumber: () => ZodNumber,
+  ZodObject: () => ZodObject,
+  ZodOptional: () => ZodOptional,
+  ZodParsedType: () => ZodParsedType,
+  ZodPipeline: () => ZodPipeline,
+  ZodPromise: () => ZodPromise,
+  ZodReadonly: () => ZodReadonly,
+  ZodRecord: () => ZodRecord,
+  ZodSchema: () => ZodType,
+  ZodSet: () => ZodSet,
+  ZodString: () => ZodString,
+  ZodSymbol: () => ZodSymbol,
+  ZodTransformer: () => ZodEffects,
+  ZodTuple: () => ZodTuple,
+  ZodType: () => ZodType,
+  ZodUndefined: () => ZodUndefined,
+  ZodUnion: () => ZodUnion,
+  ZodUnknown: () => ZodUnknown,
+  ZodVoid: () => ZodVoid,
+  addIssueToContext: () => addIssueToContext,
+  any: () => anyType,
+  array: () => arrayType,
+  bigint: () => bigIntType,
+  boolean: () => booleanType,
+  coerce: () => coerce,
+  custom: () => custom,
+  date: () => dateType,
+  datetimeRegex: () => datetimeRegex,
+  defaultErrorMap: () => en_default,
+  discriminatedUnion: () => discriminatedUnionType,
+  effect: () => effectsType,
+  enum: () => enumType,
+  function: () => functionType,
+  getErrorMap: () => getErrorMap,
+  getParsedType: () => getParsedType,
+  instanceof: () => instanceOfType,
+  intersection: () => intersectionType,
+  isAborted: () => isAborted,
+  isAsync: () => isAsync,
+  isDirty: () => isDirty,
+  isValid: () => isValid,
+  late: () => late,
+  lazy: () => lazyType,
+  literal: () => literalType,
+  makeIssue: () => makeIssue,
+  map: () => mapType,
+  nan: () => nanType,
+  nativeEnum: () => nativeEnumType,
+  never: () => neverType,
+  null: () => nullType,
+  nullable: () => nullableType,
+  number: () => numberType,
+  object: () => objectType,
+  objectUtil: () => objectUtil,
+  oboolean: () => oboolean,
+  onumber: () => onumber,
+  optional: () => optionalType,
+  ostring: () => ostring,
+  pipeline: () => pipelineType,
+  preprocess: () => preprocessType,
+  promise: () => promiseType,
+  quotelessJson: () => quotelessJson,
+  record: () => recordType,
+  set: () => setType,
+  setErrorMap: () => setErrorMap,
+  strictObject: () => strictObjectType,
+  string: () => stringType,
+  symbol: () => symbolType,
+  transformer: () => effectsType,
+  tuple: () => tupleType,
+  undefined: () => undefinedType,
+  union: () => unionType,
+  unknown: () => unknownType,
+  util: () => util,
+  void: () => voidType
+});
+
+// ../node_modules/.bun/zod@3.25.76/node_modules/zod/v3/helpers/util.js
+var util;
+(function(util2) {
+  util2.assertEqual = (_) => {
+  };
+  function assertIs(_arg) {
+  }
+  util2.assertIs = assertIs;
+  function assertNever(_x) {
+    throw new Error();
+  }
+  util2.assertNever = assertNever;
+  util2.arrayToEnum = (items) => {
+    const obj = {};
+    for (const item of items) {
+      obj[item] = item;
+    }
+    return obj;
+  };
+  util2.getValidEnumValues = (obj) => {
+    const validKeys = util2.objectKeys(obj).filter((k) => typeof obj[obj[k]] !== "number");
+    const filtered = {};
+    for (const k of validKeys) {
+      filtered[k] = obj[k];
+    }
+    return util2.objectValues(filtered);
+  };
+  util2.objectValues = (obj) => {
+    return util2.objectKeys(obj).map(function(e) {
+      return obj[e];
+    });
+  };
+  util2.objectKeys = typeof Object.keys === "function" ? (obj) => Object.keys(obj) : (object) => {
+    const keys2 = [];
+    for (const key in object) {
+      if (Object.prototype.hasOwnProperty.call(object, key)) {
+        keys2.push(key);
+      }
+    }
+    return keys2;
+  };
+  util2.find = (arr, checker) => {
+    for (const item of arr) {
+      if (checker(item))
+        return item;
+    }
+    return void 0;
+  };
+  util2.isInteger = typeof Number.isInteger === "function" ? (val) => Number.isInteger(val) : (val) => typeof val === "number" && Number.isFinite(val) && Math.floor(val) === val;
+  function joinValues(array, separator = " | ") {
+    return array.map((val) => typeof val === "string" ? `'${val}'` : val).join(separator);
+  }
+  util2.joinValues = joinValues;
+  util2.jsonStringifyReplacer = (_, value) => {
+    if (typeof value === "bigint") {
+      return value.toString();
+    }
+    return value;
+  };
+})(util || (util = {}));
+var objectUtil;
+(function(objectUtil2) {
+  objectUtil2.mergeShapes = (first, second) => {
+    return {
+      ...first,
+      ...second
+      // second overwrites first
+    };
+  };
+})(objectUtil || (objectUtil = {}));
+var ZodParsedType = util.arrayToEnum([
+  "string",
+  "nan",
+  "number",
+  "integer",
+  "float",
+  "boolean",
+  "date",
+  "bigint",
+  "symbol",
+  "function",
+  "undefined",
+  "null",
+  "array",
+  "object",
+  "unknown",
+  "promise",
+  "void",
+  "never",
+  "map",
+  "set"
+]);
+var getParsedType = (data) => {
+  const t = typeof data;
+  switch (t) {
+    case "undefined":
+      return ZodParsedType.undefined;
+    case "string":
+      return ZodParsedType.string;
+    case "number":
+      return Number.isNaN(data) ? ZodParsedType.nan : ZodParsedType.number;
+    case "boolean":
+      return ZodParsedType.boolean;
+    case "function":
+      return ZodParsedType.function;
+    case "bigint":
+      return ZodParsedType.bigint;
+    case "symbol":
+      return ZodParsedType.symbol;
+    case "object":
+      if (Array.isArray(data)) {
+        return ZodParsedType.array;
+      }
+      if (data === null) {
+        return ZodParsedType.null;
+      }
+      if (data.then && typeof data.then === "function" && data.catch && typeof data.catch === "function") {
+        return ZodParsedType.promise;
+      }
+      if (typeof Map !== "undefined" && data instanceof Map) {
+        return ZodParsedType.map;
+      }
+      if (typeof Set !== "undefined" && data instanceof Set) {
+        return ZodParsedType.set;
+      }
+      if (typeof Date !== "undefined" && data instanceof Date) {
+        return ZodParsedType.date;
+      }
+      return ZodParsedType.object;
+    default:
+      return ZodParsedType.unknown;
+  }
+};
+
+// ../node_modules/.bun/zod@3.25.76/node_modules/zod/v3/ZodError.js
+var ZodIssueCode = util.arrayToEnum([
+  "invalid_type",
+  "invalid_literal",
+  "custom",
+  "invalid_union",
+  "invalid_union_discriminator",
+  "invalid_enum_value",
+  "unrecognized_keys",
+  "invalid_arguments",
+  "invalid_return_type",
+  "invalid_date",
+  "invalid_string",
+  "too_small",
+  "too_big",
+  "invalid_intersection_types",
+  "not_multiple_of",
+  "not_finite"
+]);
+var quotelessJson = (obj) => {
+  const json = JSON.stringify(obj, null, 2);
+  return json.replace(/"([^"]+)":/g, "$1:");
+};
+var ZodError = class _ZodError extends Error {
+  get errors() {
+    return this.issues;
+  }
+  constructor(issues) {
+    super();
+    this.issues = [];
+    this.addIssue = (sub) => {
+      this.issues = [...this.issues, sub];
+    };
+    this.addIssues = (subs = []) => {
+      this.issues = [...this.issues, ...subs];
+    };
+    const actualProto = new.target.prototype;
+    if (Object.setPrototypeOf) {
+      Object.setPrototypeOf(this, actualProto);
+    } else {
+      this.__proto__ = actualProto;
+    }
+    this.name = "ZodError";
+    this.issues = issues;
+  }
+  format(_mapper) {
+    const mapper = _mapper || function(issue) {
+      return issue.message;
+    };
+    const fieldErrors = { _errors: [] };
+    const processError = (error) => {
+      for (const issue of error.issues) {
+        if (issue.code === "invalid_union") {
+          issue.unionErrors.map(processError);
+        } else if (issue.code === "invalid_return_type") {
+          processError(issue.returnTypeError);
+        } else if (issue.code === "invalid_arguments") {
+          processError(issue.argumentsError);
+        } else if (issue.path.length === 0) {
+          fieldErrors._errors.push(mapper(issue));
+        } else {
+          let curr = fieldErrors;
+          let i = 0;
+          while (i < issue.path.length) {
+            const el = issue.path[i];
+            const terminal = i === issue.path.length - 1;
+            if (!terminal) {
+              curr[el] = curr[el] || { _errors: [] };
+            } else {
+              curr[el] = curr[el] || { _errors: [] };
+              curr[el]._errors.push(mapper(issue));
+            }
+            curr = curr[el];
+            i++;
+          }
+        }
+      }
+    };
+    processError(this);
+    return fieldErrors;
+  }
+  static assert(value) {
+    if (!(value instanceof _ZodError)) {
+      throw new Error(`Not a ZodError: ${value}`);
+    }
+  }
+  toString() {
+    return this.message;
+  }
+  get message() {
+    return JSON.stringify(this.issues, util.jsonStringifyReplacer, 2);
+  }
+  get isEmpty() {
+    return this.issues.length === 0;
+  }
+  flatten(mapper = (issue) => issue.message) {
+    const fieldErrors = {};
+    const formErrors = [];
+    for (const sub of this.issues) {
+      if (sub.path.length > 0) {
+        const firstEl = sub.path[0];
+        fieldErrors[firstEl] = fieldErrors[firstEl] || [];
+        fieldErrors[firstEl].push(mapper(sub));
+      } else {
+        formErrors.push(mapper(sub));
+      }
+    }
+    return { formErrors, fieldErrors };
+  }
+  get formErrors() {
+    return this.flatten();
+  }
+};
+ZodError.create = (issues) => {
+  const error = new ZodError(issues);
+  return error;
+};
+
+// ../node_modules/.bun/zod@3.25.76/node_modules/zod/v3/locales/en.js
+var errorMap = (issue, _ctx) => {
+  let message;
+  switch (issue.code) {
+    case ZodIssueCode.invalid_type:
+      if (issue.received === ZodParsedType.undefined) {
+        message = "Required";
+      } else {
+        message = `Expected ${issue.expected}, received ${issue.received}`;
+      }
+      break;
+    case ZodIssueCode.invalid_literal:
+      message = `Invalid literal value, expected ${JSON.stringify(issue.expected, util.jsonStringifyReplacer)}`;
+      break;
+    case ZodIssueCode.unrecognized_keys:
+      message = `Unrecognized key(s) in object: ${util.joinValues(issue.keys, ", ")}`;
+      break;
+    case ZodIssueCode.invalid_union:
+      message = `Invalid input`;
+      break;
+    case ZodIssueCode.invalid_union_discriminator:
+      message = `Invalid discriminator value. Expected ${util.joinValues(issue.options)}`;
+      break;
+    case ZodIssueCode.invalid_enum_value:
+      message = `Invalid enum value. Expected ${util.joinValues(issue.options)}, received '${issue.received}'`;
+      break;
+    case ZodIssueCode.invalid_arguments:
+      message = `Invalid function arguments`;
+      break;
+    case ZodIssueCode.invalid_return_type:
+      message = `Invalid function return type`;
+      break;
+    case ZodIssueCode.invalid_date:
+      message = `Invalid date`;
+      break;
+    case ZodIssueCode.invalid_string:
+      if (typeof issue.validation === "object") {
+        if ("includes" in issue.validation) {
+          message = `Invalid input: must include "${issue.validation.includes}"`;
+          if (typeof issue.validation.position === "number") {
+            message = `${message} at one or more positions greater than or equal to ${issue.validation.position}`;
+          }
+        } else if ("startsWith" in issue.validation) {
+          message = `Invalid input: must start with "${issue.validation.startsWith}"`;
+        } else if ("endsWith" in issue.validation) {
+          message = `Invalid input: must end with "${issue.validation.endsWith}"`;
+        } else {
+          util.assertNever(issue.validation);
+        }
+      } else if (issue.validation !== "regex") {
+        message = `Invalid ${issue.validation}`;
+      } else {
+        message = "Invalid";
+      }
+      break;
+    case ZodIssueCode.too_small:
+      if (issue.type === "array")
+        message = `Array must contain ${issue.exact ? "exactly" : issue.inclusive ? `at least` : `more than`} ${issue.minimum} element(s)`;
+      else if (issue.type === "string")
+        message = `String must contain ${issue.exact ? "exactly" : issue.inclusive ? `at least` : `over`} ${issue.minimum} character(s)`;
+      else if (issue.type === "number")
+        message = `Number must be ${issue.exact ? `exactly equal to ` : issue.inclusive ? `greater than or equal to ` : `greater than `}${issue.minimum}`;
+      else if (issue.type === "bigint")
+        message = `Number must be ${issue.exact ? `exactly equal to ` : issue.inclusive ? `greater than or equal to ` : `greater than `}${issue.minimum}`;
+      else if (issue.type === "date")
+        message = `Date must be ${issue.exact ? `exactly equal to ` : issue.inclusive ? `greater than or equal to ` : `greater than `}${new Date(Number(issue.minimum))}`;
+      else
+        message = "Invalid input";
+      break;
+    case ZodIssueCode.too_big:
+      if (issue.type === "array")
+        message = `Array must contain ${issue.exact ? `exactly` : issue.inclusive ? `at most` : `less than`} ${issue.maximum} element(s)`;
+      else if (issue.type === "string")
+        message = `String must contain ${issue.exact ? `exactly` : issue.inclusive ? `at most` : `under`} ${issue.maximum} character(s)`;
+      else if (issue.type === "number")
+        message = `Number must be ${issue.exact ? `exactly` : issue.inclusive ? `less than or equal to` : `less than`} ${issue.maximum}`;
+      else if (issue.type === "bigint")
+        message = `BigInt must be ${issue.exact ? `exactly` : issue.inclusive ? `less than or equal to` : `less than`} ${issue.maximum}`;
+      else if (issue.type === "date")
+        message = `Date must be ${issue.exact ? `exactly` : issue.inclusive ? `smaller than or equal to` : `smaller than`} ${new Date(Number(issue.maximum))}`;
+      else
+        message = "Invalid input";
+      break;
+    case ZodIssueCode.custom:
+      message = `Invalid input`;
+      break;
+    case ZodIssueCode.invalid_intersection_types:
+      message = `Intersection results could not be merged`;
+      break;
+    case ZodIssueCode.not_multiple_of:
+      message = `Number must be a multiple of ${issue.multipleOf}`;
+      break;
+    case ZodIssueCode.not_finite:
+      message = "Number must be finite";
+      break;
+    default:
+      message = _ctx.defaultError;
+      util.assertNever(issue);
+  }
+  return { message };
+};
+var en_default = errorMap;
+
+// ../node_modules/.bun/zod@3.25.76/node_modules/zod/v3/errors.js
+var overrideErrorMap = en_default;
+function setErrorMap(map2) {
+  overrideErrorMap = map2;
+}
+function getErrorMap() {
+  return overrideErrorMap;
+}
+
+// ../node_modules/.bun/zod@3.25.76/node_modules/zod/v3/helpers/parseUtil.js
+var makeIssue = (params2) => {
+  const { data, path: path2, errorMaps, issueData } = params2;
+  const fullPath = [...path2, ...issueData.path || []];
+  const fullIssue = {
+    ...issueData,
+    path: fullPath
+  };
+  if (issueData.message !== void 0) {
+    return {
+      ...issueData,
+      path: fullPath,
+      message: issueData.message
+    };
+  }
+  let errorMessage = "";
+  const maps = errorMaps.filter((m) => !!m).slice().reverse();
+  for (const map2 of maps) {
+    errorMessage = map2(fullIssue, { data, defaultError: errorMessage }).message;
+  }
+  return {
+    ...issueData,
+    path: fullPath,
+    message: errorMessage
+  };
+};
+var EMPTY_PATH = [];
+function addIssueToContext(ctx, issueData) {
+  const overrideMap = getErrorMap();
+  const issue = makeIssue({
+    issueData,
+    data: ctx.data,
+    path: ctx.path,
+    errorMaps: [
+      ctx.common.contextualErrorMap,
+      // contextual error map is first priority
+      ctx.schemaErrorMap,
+      // then schema-bound map if available
+      overrideMap,
+      // then global override map
+      overrideMap === en_default ? void 0 : en_default
+      // then global default map
+    ].filter((x) => !!x)
+  });
+  ctx.common.issues.push(issue);
+}
+var ParseStatus = class _ParseStatus {
+  constructor() {
+    this.value = "valid";
+  }
+  dirty() {
+    if (this.value === "valid")
+      this.value = "dirty";
+  }
+  abort() {
+    if (this.value !== "aborted")
+      this.value = "aborted";
+  }
+  static mergeArray(status, results) {
+    const arrayValue = [];
+    for (const s of results) {
+      if (s.status === "aborted")
+        return INVALID;
+      if (s.status === "dirty")
+        status.dirty();
+      arrayValue.push(s.value);
+    }
+    return { status: status.value, value: arrayValue };
+  }
+  static async mergeObjectAsync(status, pairs) {
+    const syncPairs = [];
+    for (const pair of pairs) {
+      const key = await pair.key;
+      const value = await pair.value;
+      syncPairs.push({
+        key,
+        value
+      });
+    }
+    return _ParseStatus.mergeObjectSync(status, syncPairs);
+  }
+  static mergeObjectSync(status, pairs) {
+    const finalObject = {};
+    for (const pair of pairs) {
+      const { key, value } = pair;
+      if (key.status === "aborted")
+        return INVALID;
+      if (value.status === "aborted")
+        return INVALID;
+      if (key.status === "dirty")
+        status.dirty();
+      if (value.status === "dirty")
+        status.dirty();
+      if (key.value !== "__proto__" && (typeof value.value !== "undefined" || pair.alwaysSet)) {
+        finalObject[key.value] = value.value;
+      }
+    }
+    return { status: status.value, value: finalObject };
+  }
+};
+var INVALID = Object.freeze({
+  status: "aborted"
+});
+var DIRTY = (value) => ({ status: "dirty", value });
+var OK = (value) => ({ status: "valid", value });
+var isAborted = (x) => x.status === "aborted";
+var isDirty = (x) => x.status === "dirty";
+var isValid = (x) => x.status === "valid";
+var isAsync = (x) => typeof Promise !== "undefined" && x instanceof Promise;
+
+// ../node_modules/.bun/zod@3.25.76/node_modules/zod/v3/helpers/errorUtil.js
+var errorUtil;
+(function(errorUtil2) {
+  errorUtil2.errToObj = (message) => typeof message === "string" ? { message } : message || {};
+  errorUtil2.toString = (message) => typeof message === "string" ? message : message == null ? void 0 : message.message;
+})(errorUtil || (errorUtil = {}));
+
+// ../node_modules/.bun/zod@3.25.76/node_modules/zod/v3/types.js
+var ParseInputLazyPath = class {
+  constructor(parent, value, path2, key) {
+    this._cachedPath = [];
+    this.parent = parent;
+    this.data = value;
+    this._path = path2;
+    this._key = key;
+  }
+  get path() {
+    if (!this._cachedPath.length) {
+      if (Array.isArray(this._key)) {
+        this._cachedPath.push(...this._path, ...this._key);
+      } else {
+        this._cachedPath.push(...this._path, this._key);
+      }
+    }
+    return this._cachedPath;
+  }
+};
+var handleResult = (ctx, result) => {
+  if (isValid(result)) {
+    return { success: true, data: result.value };
+  } else {
+    if (!ctx.common.issues.length) {
+      throw new Error("Validation failed but no issues detected.");
+    }
+    return {
+      success: false,
+      get error() {
+        if (this._error)
+          return this._error;
+        const error = new ZodError(ctx.common.issues);
+        this._error = error;
+        return this._error;
+      }
+    };
+  }
+};
+function processCreateParams(params2) {
+  if (!params2)
+    return {};
+  const { errorMap: errorMap2, invalid_type_error, required_error, description } = params2;
+  if (errorMap2 && (invalid_type_error || required_error)) {
+    throw new Error(`Can't use "invalid_type_error" or "required_error" in conjunction with custom error map.`);
+  }
+  if (errorMap2)
+    return { errorMap: errorMap2, description };
+  const customMap = (iss, ctx) => {
+    var _a, _b;
+    const { message } = params2;
+    if (iss.code === "invalid_enum_value") {
+      return { message: message != null ? message : ctx.defaultError };
+    }
+    if (typeof ctx.data === "undefined") {
+      return { message: (_a = message != null ? message : required_error) != null ? _a : ctx.defaultError };
+    }
+    if (iss.code !== "invalid_type")
+      return { message: ctx.defaultError };
+    return { message: (_b = message != null ? message : invalid_type_error) != null ? _b : ctx.defaultError };
+  };
+  return { errorMap: customMap, description };
+}
+var ZodType = class {
+  get description() {
+    return this._def.description;
+  }
+  _getType(input) {
+    return getParsedType(input.data);
+  }
+  _getOrReturnCtx(input, ctx) {
+    return ctx || {
+      common: input.parent.common,
+      data: input.data,
+      parsedType: getParsedType(input.data),
+      schemaErrorMap: this._def.errorMap,
+      path: input.path,
+      parent: input.parent
+    };
+  }
+  _processInputParams(input) {
+    return {
+      status: new ParseStatus(),
+      ctx: {
+        common: input.parent.common,
+        data: input.data,
+        parsedType: getParsedType(input.data),
+        schemaErrorMap: this._def.errorMap,
+        path: input.path,
+        parent: input.parent
+      }
+    };
+  }
+  _parseSync(input) {
+    const result = this._parse(input);
+    if (isAsync(result)) {
+      throw new Error("Synchronous parse encountered promise.");
+    }
+    return result;
+  }
+  _parseAsync(input) {
+    const result = this._parse(input);
+    return Promise.resolve(result);
+  }
+  parse(data, params2) {
+    const result = this.safeParse(data, params2);
+    if (result.success)
+      return result.data;
+    throw result.error;
+  }
+  safeParse(data, params2) {
+    var _a;
+    const ctx = {
+      common: {
+        issues: [],
+        async: (_a = params2 == null ? void 0 : params2.async) != null ? _a : false,
+        contextualErrorMap: params2 == null ? void 0 : params2.errorMap
+      },
+      path: (params2 == null ? void 0 : params2.path) || [],
+      schemaErrorMap: this._def.errorMap,
+      parent: null,
+      data,
+      parsedType: getParsedType(data)
+    };
+    const result = this._parseSync({ data, path: ctx.path, parent: ctx });
+    return handleResult(ctx, result);
+  }
+  "~validate"(data) {
+    var _a, _b;
+    const ctx = {
+      common: {
+        issues: [],
+        async: !!this["~standard"].async
+      },
+      path: [],
+      schemaErrorMap: this._def.errorMap,
+      parent: null,
+      data,
+      parsedType: getParsedType(data)
+    };
+    if (!this["~standard"].async) {
+      try {
+        const result = this._parseSync({ data, path: [], parent: ctx });
+        return isValid(result) ? {
+          value: result.value
+        } : {
+          issues: ctx.common.issues
+        };
+      } catch (err) {
+        if ((_b = (_a = err == null ? void 0 : err.message) == null ? void 0 : _a.toLowerCase()) == null ? void 0 : _b.includes("encountered")) {
+          this["~standard"].async = true;
+        }
+        ctx.common = {
+          issues: [],
+          async: true
+        };
+      }
+    }
+    return this._parseAsync({ data, path: [], parent: ctx }).then((result) => isValid(result) ? {
+      value: result.value
+    } : {
+      issues: ctx.common.issues
+    });
+  }
+  async parseAsync(data, params2) {
+    const result = await this.safeParseAsync(data, params2);
+    if (result.success)
+      return result.data;
+    throw result.error;
+  }
+  async safeParseAsync(data, params2) {
+    const ctx = {
+      common: {
+        issues: [],
+        contextualErrorMap: params2 == null ? void 0 : params2.errorMap,
+        async: true
+      },
+      path: (params2 == null ? void 0 : params2.path) || [],
+      schemaErrorMap: this._def.errorMap,
+      parent: null,
+      data,
+      parsedType: getParsedType(data)
+    };
+    const maybeAsyncResult = this._parse({ data, path: ctx.path, parent: ctx });
+    const result = await (isAsync(maybeAsyncResult) ? maybeAsyncResult : Promise.resolve(maybeAsyncResult));
+    return handleResult(ctx, result);
+  }
+  refine(check, message) {
+    const getIssueProperties = (val) => {
+      if (typeof message === "string" || typeof message === "undefined") {
+        return { message };
+      } else if (typeof message === "function") {
+        return message(val);
+      } else {
+        return message;
+      }
+    };
+    return this._refinement((val, ctx) => {
+      const result = check(val);
+      const setError = () => ctx.addIssue({
+        code: ZodIssueCode.custom,
+        ...getIssueProperties(val)
+      });
+      if (typeof Promise !== "undefined" && result instanceof Promise) {
+        return result.then((data) => {
+          if (!data) {
+            setError();
+            return false;
+          } else {
+            return true;
+          }
+        });
+      }
+      if (!result) {
+        setError();
+        return false;
+      } else {
+        return true;
+      }
+    });
+  }
+  refinement(check, refinementData) {
+    return this._refinement((val, ctx) => {
+      if (!check(val)) {
+        ctx.addIssue(typeof refinementData === "function" ? refinementData(val, ctx) : refinementData);
+        return false;
+      } else {
+        return true;
+      }
+    });
+  }
+  _refinement(refinement) {
+    return new ZodEffects({
+      schema: this,
+      typeName: ZodFirstPartyTypeKind.ZodEffects,
+      effect: { type: "refinement", refinement }
+    });
+  }
+  superRefine(refinement) {
+    return this._refinement(refinement);
+  }
+  constructor(def) {
+    this.spa = this.safeParseAsync;
+    this._def = def;
+    this.parse = this.parse.bind(this);
+    this.safeParse = this.safeParse.bind(this);
+    this.parseAsync = this.parseAsync.bind(this);
+    this.safeParseAsync = this.safeParseAsync.bind(this);
+    this.spa = this.spa.bind(this);
+    this.refine = this.refine.bind(this);
+    this.refinement = this.refinement.bind(this);
+    this.superRefine = this.superRefine.bind(this);
+    this.optional = this.optional.bind(this);
+    this.nullable = this.nullable.bind(this);
+    this.nullish = this.nullish.bind(this);
+    this.array = this.array.bind(this);
+    this.promise = this.promise.bind(this);
+    this.or = this.or.bind(this);
+    this.and = this.and.bind(this);
+    this.transform = this.transform.bind(this);
+    this.brand = this.brand.bind(this);
+    this.default = this.default.bind(this);
+    this.catch = this.catch.bind(this);
+    this.describe = this.describe.bind(this);
+    this.pipe = this.pipe.bind(this);
+    this.readonly = this.readonly.bind(this);
+    this.isNullable = this.isNullable.bind(this);
+    this.isOptional = this.isOptional.bind(this);
+    this["~standard"] = {
+      version: 1,
+      vendor: "zod",
+      validate: (data) => this["~validate"](data)
+    };
+  }
+  optional() {
+    return ZodOptional.create(this, this._def);
+  }
+  nullable() {
+    return ZodNullable.create(this, this._def);
+  }
+  nullish() {
+    return this.nullable().optional();
+  }
+  array() {
+    return ZodArray.create(this);
+  }
+  promise() {
+    return ZodPromise.create(this, this._def);
+  }
+  or(option) {
+    return ZodUnion.create([this, option], this._def);
+  }
+  and(incoming) {
+    return ZodIntersection.create(this, incoming, this._def);
+  }
+  transform(transform) {
+    return new ZodEffects({
+      ...processCreateParams(this._def),
+      schema: this,
+      typeName: ZodFirstPartyTypeKind.ZodEffects,
+      effect: { type: "transform", transform }
+    });
+  }
+  default(def) {
+    const defaultValueFunc = typeof def === "function" ? def : () => def;
+    return new ZodDefault({
+      ...processCreateParams(this._def),
+      innerType: this,
+      defaultValue: defaultValueFunc,
+      typeName: ZodFirstPartyTypeKind.ZodDefault
+    });
+  }
+  brand() {
+    return new ZodBranded({
+      typeName: ZodFirstPartyTypeKind.ZodBranded,
+      type: this,
+      ...processCreateParams(this._def)
+    });
+  }
+  catch(def) {
+    const catchValueFunc = typeof def === "function" ? def : () => def;
+    return new ZodCatch({
+      ...processCreateParams(this._def),
+      innerType: this,
+      catchValue: catchValueFunc,
+      typeName: ZodFirstPartyTypeKind.ZodCatch
+    });
+  }
+  describe(description) {
+    const This = this.constructor;
+    return new This({
+      ...this._def,
+      description
+    });
+  }
+  pipe(target2) {
+    return ZodPipeline.create(this, target2);
+  }
+  readonly() {
+    return ZodReadonly.create(this);
+  }
+  isOptional() {
+    return this.safeParse(void 0).success;
+  }
+  isNullable() {
+    return this.safeParse(null).success;
+  }
+};
+var cuidRegex = /^c[^\s-]{8,}$/i;
+var cuid2Regex = /^[0-9a-z]+$/;
+var ulidRegex = /^[0-9A-HJKMNP-TV-Z]{26}$/i;
+var uuidRegex = /^[0-9a-fA-F]{8}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{12}$/i;
+var nanoidRegex = /^[a-z0-9_-]{21}$/i;
+var jwtRegex = /^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]*$/;
+var durationRegex = /^[-+]?P(?!$)(?:(?:[-+]?\d+Y)|(?:[-+]?\d+[.,]\d+Y$))?(?:(?:[-+]?\d+M)|(?:[-+]?\d+[.,]\d+M$))?(?:(?:[-+]?\d+W)|(?:[-+]?\d+[.,]\d+W$))?(?:(?:[-+]?\d+D)|(?:[-+]?\d+[.,]\d+D$))?(?:T(?=[\d+-])(?:(?:[-+]?\d+H)|(?:[-+]?\d+[.,]\d+H$))?(?:(?:[-+]?\d+M)|(?:[-+]?\d+[.,]\d+M$))?(?:[-+]?\d+(?:[.,]\d+)?S)?)??$/;
+var emailRegex = /^(?!\.)(?!.*\.\.)([A-Z0-9_'+\-\.]*)[A-Z0-9_+-]@([A-Z0-9][A-Z0-9\-]*\.)+[A-Z]{2,}$/i;
+var _emojiRegex = `^(\\p{Extended_Pictographic}|\\p{Emoji_Component})+$`;
+var emojiRegex;
+var ipv4Regex = /^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])$/;
+var ipv4CidrRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\/(3[0-2]|[12]?[0-9])$/;
+var ipv6Regex = /^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))$/;
+var ipv6CidrRegex = /^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))\/(12[0-8]|1[01][0-9]|[1-9]?[0-9])$/;
+var base64Regex = /^([0-9a-zA-Z+/]{4})*(([0-9a-zA-Z+/]{2}==)|([0-9a-zA-Z+/]{3}=))?$/;
+var base64urlRegex = /^([0-9a-zA-Z-_]{4})*(([0-9a-zA-Z-_]{2}(==)?)|([0-9a-zA-Z-_]{3}(=)?))?$/;
+var dateRegexSource = `((\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-((0[13578]|1[02])-(0[1-9]|[12]\\d|3[01])|(0[469]|11)-(0[1-9]|[12]\\d|30)|(02)-(0[1-9]|1\\d|2[0-8])))`;
+var dateRegex = new RegExp(`^${dateRegexSource}$`);
+function timeRegexSource(args2) {
+  let secondsRegexSource = `[0-5]\\d`;
+  if (args2.precision) {
+    secondsRegexSource = `${secondsRegexSource}\\.\\d{${args2.precision}}`;
+  } else if (args2.precision == null) {
+    secondsRegexSource = `${secondsRegexSource}(\\.\\d+)?`;
+  }
+  const secondsQuantifier = args2.precision ? "+" : "?";
+  return `([01]\\d|2[0-3]):[0-5]\\d(:${secondsRegexSource})${secondsQuantifier}`;
+}
+function timeRegex(args2) {
+  return new RegExp(`^${timeRegexSource(args2)}$`);
+}
+function datetimeRegex(args2) {
+  let regex = `${dateRegexSource}T${timeRegexSource(args2)}`;
+  const opts = [];
+  opts.push(args2.local ? `Z?` : `Z`);
+  if (args2.offset)
+    opts.push(`([+-]\\d{2}:?\\d{2})`);
+  regex = `${regex}(${opts.join("|")})`;
+  return new RegExp(`^${regex}$`);
+}
+function isValidIP(ip, version) {
+  if ((version === "v4" || !version) && ipv4Regex.test(ip)) {
+    return true;
+  }
+  if ((version === "v6" || !version) && ipv6Regex.test(ip)) {
+    return true;
+  }
+  return false;
+}
+function isValidJWT(jwt, alg) {
+  if (!jwtRegex.test(jwt))
+    return false;
+  try {
+    const [header] = jwt.split(".");
+    if (!header)
+      return false;
+    const base64 = header.replace(/-/g, "+").replace(/_/g, "/").padEnd(header.length + (4 - header.length % 4) % 4, "=");
+    const decoded = JSON.parse(atob(base64));
+    if (typeof decoded !== "object" || decoded === null)
+      return false;
+    if ("typ" in decoded && (decoded == null ? void 0 : decoded.typ) !== "JWT")
+      return false;
+    if (!decoded.alg)
+      return false;
+    if (alg && decoded.alg !== alg)
+      return false;
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+function isValidCidr(ip, version) {
+  if ((version === "v4" || !version) && ipv4CidrRegex.test(ip)) {
+    return true;
+  }
+  if ((version === "v6" || !version) && ipv6CidrRegex.test(ip)) {
+    return true;
+  }
+  return false;
+}
+var ZodString = class _ZodString extends ZodType {
+  _parse(input) {
+    if (this._def.coerce) {
+      input.data = String(input.data);
+    }
+    const parsedType = this._getType(input);
+    if (parsedType !== ZodParsedType.string) {
+      const ctx2 = this._getOrReturnCtx(input);
+      addIssueToContext(ctx2, {
+        code: ZodIssueCode.invalid_type,
+        expected: ZodParsedType.string,
+        received: ctx2.parsedType
+      });
+      return INVALID;
+    }
+    const status = new ParseStatus();
+    let ctx = void 0;
+    for (const check of this._def.checks) {
+      if (check.kind === "min") {
+        if (input.data.length < check.value) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            code: ZodIssueCode.too_small,
+            minimum: check.value,
+            type: "string",
+            inclusive: true,
+            exact: false,
+            message: check.message
+          });
+          status.dirty();
+        }
+      } else if (check.kind === "max") {
+        if (input.data.length > check.value) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            code: ZodIssueCode.too_big,
+            maximum: check.value,
+            type: "string",
+            inclusive: true,
+            exact: false,
+            message: check.message
+          });
+          status.dirty();
+        }
+      } else if (check.kind === "length") {
+        const tooBig = input.data.length > check.value;
+        const tooSmall = input.data.length < check.value;
+        if (tooBig || tooSmall) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          if (tooBig) {
+            addIssueToContext(ctx, {
+              code: ZodIssueCode.too_big,
+              maximum: check.value,
+              type: "string",
+              inclusive: true,
+              exact: true,
+              message: check.message
+            });
+          } else if (tooSmall) {
+            addIssueToContext(ctx, {
+              code: ZodIssueCode.too_small,
+              minimum: check.value,
+              type: "string",
+              inclusive: true,
+              exact: true,
+              message: check.message
+            });
+          }
+          status.dirty();
+        }
+      } else if (check.kind === "email") {
+        if (!emailRegex.test(input.data)) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            validation: "email",
+            code: ZodIssueCode.invalid_string,
+            message: check.message
+          });
+          status.dirty();
+        }
+      } else if (check.kind === "emoji") {
+        if (!emojiRegex) {
+          emojiRegex = new RegExp(_emojiRegex, "u");
+        }
+        if (!emojiRegex.test(input.data)) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            validation: "emoji",
+            code: ZodIssueCode.invalid_string,
+            message: check.message
+          });
+          status.dirty();
+        }
+      } else if (check.kind === "uuid") {
+        if (!uuidRegex.test(input.data)) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            validation: "uuid",
+            code: ZodIssueCode.invalid_string,
+            message: check.message
+          });
+          status.dirty();
+        }
+      } else if (check.kind === "nanoid") {
+        if (!nanoidRegex.test(input.data)) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            validation: "nanoid",
+            code: ZodIssueCode.invalid_string,
+            message: check.message
+          });
+          status.dirty();
+        }
+      } else if (check.kind === "cuid") {
+        if (!cuidRegex.test(input.data)) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            validation: "cuid",
+            code: ZodIssueCode.invalid_string,
+            message: check.message
+          });
+          status.dirty();
+        }
+      } else if (check.kind === "cuid2") {
+        if (!cuid2Regex.test(input.data)) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            validation: "cuid2",
+            code: ZodIssueCode.invalid_string,
+            message: check.message
+          });
+          status.dirty();
+        }
+      } else if (check.kind === "ulid") {
+        if (!ulidRegex.test(input.data)) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            validation: "ulid",
+            code: ZodIssueCode.invalid_string,
+            message: check.message
+          });
+          status.dirty();
+        }
+      } else if (check.kind === "url") {
+        try {
+          new URL(input.data);
+        } catch (e) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            validation: "url",
+            code: ZodIssueCode.invalid_string,
+            message: check.message
+          });
+          status.dirty();
+        }
+      } else if (check.kind === "regex") {
+        check.regex.lastIndex = 0;
+        const testResult = check.regex.test(input.data);
+        if (!testResult) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            validation: "regex",
+            code: ZodIssueCode.invalid_string,
+            message: check.message
+          });
+          status.dirty();
+        }
+      } else if (check.kind === "trim") {
+        input.data = input.data.trim();
+      } else if (check.kind === "includes") {
+        if (!input.data.includes(check.value, check.position)) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            code: ZodIssueCode.invalid_string,
+            validation: { includes: check.value, position: check.position },
+            message: check.message
+          });
+          status.dirty();
+        }
+      } else if (check.kind === "toLowerCase") {
+        input.data = input.data.toLowerCase();
+      } else if (check.kind === "toUpperCase") {
+        input.data = input.data.toUpperCase();
+      } else if (check.kind === "startsWith") {
+        if (!input.data.startsWith(check.value)) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            code: ZodIssueCode.invalid_string,
+            validation: { startsWith: check.value },
+            message: check.message
+          });
+          status.dirty();
+        }
+      } else if (check.kind === "endsWith") {
+        if (!input.data.endsWith(check.value)) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            code: ZodIssueCode.invalid_string,
+            validation: { endsWith: check.value },
+            message: check.message
+          });
+          status.dirty();
+        }
+      } else if (check.kind === "datetime") {
+        const regex = datetimeRegex(check);
+        if (!regex.test(input.data)) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            code: ZodIssueCode.invalid_string,
+            validation: "datetime",
+            message: check.message
+          });
+          status.dirty();
+        }
+      } else if (check.kind === "date") {
+        const regex = dateRegex;
+        if (!regex.test(input.data)) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            code: ZodIssueCode.invalid_string,
+            validation: "date",
+            message: check.message
+          });
+          status.dirty();
+        }
+      } else if (check.kind === "time") {
+        const regex = timeRegex(check);
+        if (!regex.test(input.data)) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            code: ZodIssueCode.invalid_string,
+            validation: "time",
+            message: check.message
+          });
+          status.dirty();
+        }
+      } else if (check.kind === "duration") {
+        if (!durationRegex.test(input.data)) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            validation: "duration",
+            code: ZodIssueCode.invalid_string,
+            message: check.message
+          });
+          status.dirty();
+        }
+      } else if (check.kind === "ip") {
+        if (!isValidIP(input.data, check.version)) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            validation: "ip",
+            code: ZodIssueCode.invalid_string,
+            message: check.message
+          });
+          status.dirty();
+        }
+      } else if (check.kind === "jwt") {
+        if (!isValidJWT(input.data, check.alg)) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            validation: "jwt",
+            code: ZodIssueCode.invalid_string,
+            message: check.message
+          });
+          status.dirty();
+        }
+      } else if (check.kind === "cidr") {
+        if (!isValidCidr(input.data, check.version)) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            validation: "cidr",
+            code: ZodIssueCode.invalid_string,
+            message: check.message
+          });
+          status.dirty();
+        }
+      } else if (check.kind === "base64") {
+        if (!base64Regex.test(input.data)) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            validation: "base64",
+            code: ZodIssueCode.invalid_string,
+            message: check.message
+          });
+          status.dirty();
+        }
+      } else if (check.kind === "base64url") {
+        if (!base64urlRegex.test(input.data)) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            validation: "base64url",
+            code: ZodIssueCode.invalid_string,
+            message: check.message
+          });
+          status.dirty();
+        }
+      } else {
+        util.assertNever(check);
+      }
+    }
+    return { status: status.value, value: input.data };
+  }
+  _regex(regex, validation, message) {
+    return this.refinement((data) => regex.test(data), {
+      validation,
+      code: ZodIssueCode.invalid_string,
+      ...errorUtil.errToObj(message)
+    });
+  }
+  _addCheck(check) {
+    return new _ZodString({
+      ...this._def,
+      checks: [...this._def.checks, check]
+    });
+  }
+  email(message) {
+    return this._addCheck({ kind: "email", ...errorUtil.errToObj(message) });
+  }
+  url(message) {
+    return this._addCheck({ kind: "url", ...errorUtil.errToObj(message) });
+  }
+  emoji(message) {
+    return this._addCheck({ kind: "emoji", ...errorUtil.errToObj(message) });
+  }
+  uuid(message) {
+    return this._addCheck({ kind: "uuid", ...errorUtil.errToObj(message) });
+  }
+  nanoid(message) {
+    return this._addCheck({ kind: "nanoid", ...errorUtil.errToObj(message) });
+  }
+  cuid(message) {
+    return this._addCheck({ kind: "cuid", ...errorUtil.errToObj(message) });
+  }
+  cuid2(message) {
+    return this._addCheck({ kind: "cuid2", ...errorUtil.errToObj(message) });
+  }
+  ulid(message) {
+    return this._addCheck({ kind: "ulid", ...errorUtil.errToObj(message) });
+  }
+  base64(message) {
+    return this._addCheck({ kind: "base64", ...errorUtil.errToObj(message) });
+  }
+  base64url(message) {
+    return this._addCheck({
+      kind: "base64url",
+      ...errorUtil.errToObj(message)
+    });
+  }
+  jwt(options) {
+    return this._addCheck({ kind: "jwt", ...errorUtil.errToObj(options) });
+  }
+  ip(options) {
+    return this._addCheck({ kind: "ip", ...errorUtil.errToObj(options) });
+  }
+  cidr(options) {
+    return this._addCheck({ kind: "cidr", ...errorUtil.errToObj(options) });
+  }
+  datetime(options) {
+    var _a, _b;
+    if (typeof options === "string") {
+      return this._addCheck({
+        kind: "datetime",
+        precision: null,
+        offset: false,
+        local: false,
+        message: options
+      });
+    }
+    return this._addCheck({
+      kind: "datetime",
+      precision: typeof (options == null ? void 0 : options.precision) === "undefined" ? null : options == null ? void 0 : options.precision,
+      offset: (_a = options == null ? void 0 : options.offset) != null ? _a : false,
+      local: (_b = options == null ? void 0 : options.local) != null ? _b : false,
+      ...errorUtil.errToObj(options == null ? void 0 : options.message)
+    });
+  }
+  date(message) {
+    return this._addCheck({ kind: "date", message });
+  }
+  time(options) {
+    if (typeof options === "string") {
+      return this._addCheck({
+        kind: "time",
+        precision: null,
+        message: options
+      });
+    }
+    return this._addCheck({
+      kind: "time",
+      precision: typeof (options == null ? void 0 : options.precision) === "undefined" ? null : options == null ? void 0 : options.precision,
+      ...errorUtil.errToObj(options == null ? void 0 : options.message)
+    });
+  }
+  duration(message) {
+    return this._addCheck({ kind: "duration", ...errorUtil.errToObj(message) });
+  }
+  regex(regex, message) {
+    return this._addCheck({
+      kind: "regex",
+      regex,
+      ...errorUtil.errToObj(message)
+    });
+  }
+  includes(value, options) {
+    return this._addCheck({
+      kind: "includes",
+      value,
+      position: options == null ? void 0 : options.position,
+      ...errorUtil.errToObj(options == null ? void 0 : options.message)
+    });
+  }
+  startsWith(value, message) {
+    return this._addCheck({
+      kind: "startsWith",
+      value,
+      ...errorUtil.errToObj(message)
+    });
+  }
+  endsWith(value, message) {
+    return this._addCheck({
+      kind: "endsWith",
+      value,
+      ...errorUtil.errToObj(message)
+    });
+  }
+  min(minLength, message) {
+    return this._addCheck({
+      kind: "min",
+      value: minLength,
+      ...errorUtil.errToObj(message)
+    });
+  }
+  max(maxLength, message) {
+    return this._addCheck({
+      kind: "max",
+      value: maxLength,
+      ...errorUtil.errToObj(message)
+    });
+  }
+  length(len, message) {
+    return this._addCheck({
+      kind: "length",
+      value: len,
+      ...errorUtil.errToObj(message)
+    });
+  }
+  /**
+   * Equivalent to `.min(1)`
+   */
+  nonempty(message) {
+    return this.min(1, errorUtil.errToObj(message));
+  }
+  trim() {
+    return new _ZodString({
+      ...this._def,
+      checks: [...this._def.checks, { kind: "trim" }]
+    });
+  }
+  toLowerCase() {
+    return new _ZodString({
+      ...this._def,
+      checks: [...this._def.checks, { kind: "toLowerCase" }]
+    });
+  }
+  toUpperCase() {
+    return new _ZodString({
+      ...this._def,
+      checks: [...this._def.checks, { kind: "toUpperCase" }]
+    });
+  }
+  get isDatetime() {
+    return !!this._def.checks.find((ch) => ch.kind === "datetime");
+  }
+  get isDate() {
+    return !!this._def.checks.find((ch) => ch.kind === "date");
+  }
+  get isTime() {
+    return !!this._def.checks.find((ch) => ch.kind === "time");
+  }
+  get isDuration() {
+    return !!this._def.checks.find((ch) => ch.kind === "duration");
+  }
+  get isEmail() {
+    return !!this._def.checks.find((ch) => ch.kind === "email");
+  }
+  get isURL() {
+    return !!this._def.checks.find((ch) => ch.kind === "url");
+  }
+  get isEmoji() {
+    return !!this._def.checks.find((ch) => ch.kind === "emoji");
+  }
+  get isUUID() {
+    return !!this._def.checks.find((ch) => ch.kind === "uuid");
+  }
+  get isNANOID() {
+    return !!this._def.checks.find((ch) => ch.kind === "nanoid");
+  }
+  get isCUID() {
+    return !!this._def.checks.find((ch) => ch.kind === "cuid");
+  }
+  get isCUID2() {
+    return !!this._def.checks.find((ch) => ch.kind === "cuid2");
+  }
+  get isULID() {
+    return !!this._def.checks.find((ch) => ch.kind === "ulid");
+  }
+  get isIP() {
+    return !!this._def.checks.find((ch) => ch.kind === "ip");
+  }
+  get isCIDR() {
+    return !!this._def.checks.find((ch) => ch.kind === "cidr");
+  }
+  get isBase64() {
+    return !!this._def.checks.find((ch) => ch.kind === "base64");
+  }
+  get isBase64url() {
+    return !!this._def.checks.find((ch) => ch.kind === "base64url");
+  }
+  get minLength() {
+    let min2 = null;
+    for (const ch of this._def.checks) {
+      if (ch.kind === "min") {
+        if (min2 === null || ch.value > min2)
+          min2 = ch.value;
+      }
+    }
+    return min2;
+  }
+  get maxLength() {
+    let max2 = null;
+    for (const ch of this._def.checks) {
+      if (ch.kind === "max") {
+        if (max2 === null || ch.value < max2)
+          max2 = ch.value;
+      }
+    }
+    return max2;
+  }
+};
+ZodString.create = (params2) => {
+  var _a;
+  return new ZodString({
+    checks: [],
+    typeName: ZodFirstPartyTypeKind.ZodString,
+    coerce: (_a = params2 == null ? void 0 : params2.coerce) != null ? _a : false,
+    ...processCreateParams(params2)
+  });
+};
+function floatSafeRemainder(val, step) {
+  const valDecCount = (val.toString().split(".")[1] || "").length;
+  const stepDecCount = (step.toString().split(".")[1] || "").length;
+  const decCount = valDecCount > stepDecCount ? valDecCount : stepDecCount;
+  const valInt = Number.parseInt(val.toFixed(decCount).replace(".", ""));
+  const stepInt = Number.parseInt(step.toFixed(decCount).replace(".", ""));
+  return valInt % stepInt / 10 ** decCount;
+}
+var ZodNumber = class _ZodNumber extends ZodType {
+  constructor() {
+    super(...arguments);
+    this.min = this.gte;
+    this.max = this.lte;
+    this.step = this.multipleOf;
+  }
+  _parse(input) {
+    if (this._def.coerce) {
+      input.data = Number(input.data);
+    }
+    const parsedType = this._getType(input);
+    if (parsedType !== ZodParsedType.number) {
+      const ctx2 = this._getOrReturnCtx(input);
+      addIssueToContext(ctx2, {
+        code: ZodIssueCode.invalid_type,
+        expected: ZodParsedType.number,
+        received: ctx2.parsedType
+      });
+      return INVALID;
+    }
+    let ctx = void 0;
+    const status = new ParseStatus();
+    for (const check of this._def.checks) {
+      if (check.kind === "int") {
+        if (!util.isInteger(input.data)) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            code: ZodIssueCode.invalid_type,
+            expected: "integer",
+            received: "float",
+            message: check.message
+          });
+          status.dirty();
+        }
+      } else if (check.kind === "min") {
+        const tooSmall = check.inclusive ? input.data < check.value : input.data <= check.value;
+        if (tooSmall) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            code: ZodIssueCode.too_small,
+            minimum: check.value,
+            type: "number",
+            inclusive: check.inclusive,
+            exact: false,
+            message: check.message
+          });
+          status.dirty();
+        }
+      } else if (check.kind === "max") {
+        const tooBig = check.inclusive ? input.data > check.value : input.data >= check.value;
+        if (tooBig) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            code: ZodIssueCode.too_big,
+            maximum: check.value,
+            type: "number",
+            inclusive: check.inclusive,
+            exact: false,
+            message: check.message
+          });
+          status.dirty();
+        }
+      } else if (check.kind === "multipleOf") {
+        if (floatSafeRemainder(input.data, check.value) !== 0) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            code: ZodIssueCode.not_multiple_of,
+            multipleOf: check.value,
+            message: check.message
+          });
+          status.dirty();
+        }
+      } else if (check.kind === "finite") {
+        if (!Number.isFinite(input.data)) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            code: ZodIssueCode.not_finite,
+            message: check.message
+          });
+          status.dirty();
+        }
+      } else {
+        util.assertNever(check);
+      }
+    }
+    return { status: status.value, value: input.data };
+  }
+  gte(value, message) {
+    return this.setLimit("min", value, true, errorUtil.toString(message));
+  }
+  gt(value, message) {
+    return this.setLimit("min", value, false, errorUtil.toString(message));
+  }
+  lte(value, message) {
+    return this.setLimit("max", value, true, errorUtil.toString(message));
+  }
+  lt(value, message) {
+    return this.setLimit("max", value, false, errorUtil.toString(message));
+  }
+  setLimit(kind, value, inclusive, message) {
+    return new _ZodNumber({
+      ...this._def,
+      checks: [
+        ...this._def.checks,
+        {
+          kind,
+          value,
+          inclusive,
+          message: errorUtil.toString(message)
+        }
+      ]
+    });
+  }
+  _addCheck(check) {
+    return new _ZodNumber({
+      ...this._def,
+      checks: [...this._def.checks, check]
+    });
+  }
+  int(message) {
+    return this._addCheck({
+      kind: "int",
+      message: errorUtil.toString(message)
+    });
+  }
+  positive(message) {
+    return this._addCheck({
+      kind: "min",
+      value: 0,
+      inclusive: false,
+      message: errorUtil.toString(message)
+    });
+  }
+  negative(message) {
+    return this._addCheck({
+      kind: "max",
+      value: 0,
+      inclusive: false,
+      message: errorUtil.toString(message)
+    });
+  }
+  nonpositive(message) {
+    return this._addCheck({
+      kind: "max",
+      value: 0,
+      inclusive: true,
+      message: errorUtil.toString(message)
+    });
+  }
+  nonnegative(message) {
+    return this._addCheck({
+      kind: "min",
+      value: 0,
+      inclusive: true,
+      message: errorUtil.toString(message)
+    });
+  }
+  multipleOf(value, message) {
+    return this._addCheck({
+      kind: "multipleOf",
+      value,
+      message: errorUtil.toString(message)
+    });
+  }
+  finite(message) {
+    return this._addCheck({
+      kind: "finite",
+      message: errorUtil.toString(message)
+    });
+  }
+  safe(message) {
+    return this._addCheck({
+      kind: "min",
+      inclusive: true,
+      value: Number.MIN_SAFE_INTEGER,
+      message: errorUtil.toString(message)
+    })._addCheck({
+      kind: "max",
+      inclusive: true,
+      value: Number.MAX_SAFE_INTEGER,
+      message: errorUtil.toString(message)
+    });
+  }
+  get minValue() {
+    let min2 = null;
+    for (const ch of this._def.checks) {
+      if (ch.kind === "min") {
+        if (min2 === null || ch.value > min2)
+          min2 = ch.value;
+      }
+    }
+    return min2;
+  }
+  get maxValue() {
+    let max2 = null;
+    for (const ch of this._def.checks) {
+      if (ch.kind === "max") {
+        if (max2 === null || ch.value < max2)
+          max2 = ch.value;
+      }
+    }
+    return max2;
+  }
+  get isInt() {
+    return !!this._def.checks.find((ch) => ch.kind === "int" || ch.kind === "multipleOf" && util.isInteger(ch.value));
+  }
+  get isFinite() {
+    let max2 = null;
+    let min2 = null;
+    for (const ch of this._def.checks) {
+      if (ch.kind === "finite" || ch.kind === "int" || ch.kind === "multipleOf") {
+        return true;
+      } else if (ch.kind === "min") {
+        if (min2 === null || ch.value > min2)
+          min2 = ch.value;
+      } else if (ch.kind === "max") {
+        if (max2 === null || ch.value < max2)
+          max2 = ch.value;
+      }
+    }
+    return Number.isFinite(min2) && Number.isFinite(max2);
+  }
+};
+ZodNumber.create = (params2) => {
+  return new ZodNumber({
+    checks: [],
+    typeName: ZodFirstPartyTypeKind.ZodNumber,
+    coerce: (params2 == null ? void 0 : params2.coerce) || false,
+    ...processCreateParams(params2)
+  });
+};
+var ZodBigInt = class _ZodBigInt extends ZodType {
+  constructor() {
+    super(...arguments);
+    this.min = this.gte;
+    this.max = this.lte;
+  }
+  _parse(input) {
+    if (this._def.coerce) {
+      try {
+        input.data = BigInt(input.data);
+      } catch (e) {
+        return this._getInvalidInput(input);
+      }
+    }
+    const parsedType = this._getType(input);
+    if (parsedType !== ZodParsedType.bigint) {
+      return this._getInvalidInput(input);
+    }
+    let ctx = void 0;
+    const status = new ParseStatus();
+    for (const check of this._def.checks) {
+      if (check.kind === "min") {
+        const tooSmall = check.inclusive ? input.data < check.value : input.data <= check.value;
+        if (tooSmall) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            code: ZodIssueCode.too_small,
+            type: "bigint",
+            minimum: check.value,
+            inclusive: check.inclusive,
+            message: check.message
+          });
+          status.dirty();
+        }
+      } else if (check.kind === "max") {
+        const tooBig = check.inclusive ? input.data > check.value : input.data >= check.value;
+        if (tooBig) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            code: ZodIssueCode.too_big,
+            type: "bigint",
+            maximum: check.value,
+            inclusive: check.inclusive,
+            message: check.message
+          });
+          status.dirty();
+        }
+      } else if (check.kind === "multipleOf") {
+        if (input.data % check.value !== BigInt(0)) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            code: ZodIssueCode.not_multiple_of,
+            multipleOf: check.value,
+            message: check.message
+          });
+          status.dirty();
+        }
+      } else {
+        util.assertNever(check);
+      }
+    }
+    return { status: status.value, value: input.data };
+  }
+  _getInvalidInput(input) {
+    const ctx = this._getOrReturnCtx(input);
+    addIssueToContext(ctx, {
+      code: ZodIssueCode.invalid_type,
+      expected: ZodParsedType.bigint,
+      received: ctx.parsedType
+    });
+    return INVALID;
+  }
+  gte(value, message) {
+    return this.setLimit("min", value, true, errorUtil.toString(message));
+  }
+  gt(value, message) {
+    return this.setLimit("min", value, false, errorUtil.toString(message));
+  }
+  lte(value, message) {
+    return this.setLimit("max", value, true, errorUtil.toString(message));
+  }
+  lt(value, message) {
+    return this.setLimit("max", value, false, errorUtil.toString(message));
+  }
+  setLimit(kind, value, inclusive, message) {
+    return new _ZodBigInt({
+      ...this._def,
+      checks: [
+        ...this._def.checks,
+        {
+          kind,
+          value,
+          inclusive,
+          message: errorUtil.toString(message)
+        }
+      ]
+    });
+  }
+  _addCheck(check) {
+    return new _ZodBigInt({
+      ...this._def,
+      checks: [...this._def.checks, check]
+    });
+  }
+  positive(message) {
+    return this._addCheck({
+      kind: "min",
+      value: BigInt(0),
+      inclusive: false,
+      message: errorUtil.toString(message)
+    });
+  }
+  negative(message) {
+    return this._addCheck({
+      kind: "max",
+      value: BigInt(0),
+      inclusive: false,
+      message: errorUtil.toString(message)
+    });
+  }
+  nonpositive(message) {
+    return this._addCheck({
+      kind: "max",
+      value: BigInt(0),
+      inclusive: true,
+      message: errorUtil.toString(message)
+    });
+  }
+  nonnegative(message) {
+    return this._addCheck({
+      kind: "min",
+      value: BigInt(0),
+      inclusive: true,
+      message: errorUtil.toString(message)
+    });
+  }
+  multipleOf(value, message) {
+    return this._addCheck({
+      kind: "multipleOf",
+      value,
+      message: errorUtil.toString(message)
+    });
+  }
+  get minValue() {
+    let min2 = null;
+    for (const ch of this._def.checks) {
+      if (ch.kind === "min") {
+        if (min2 === null || ch.value > min2)
+          min2 = ch.value;
+      }
+    }
+    return min2;
+  }
+  get maxValue() {
+    let max2 = null;
+    for (const ch of this._def.checks) {
+      if (ch.kind === "max") {
+        if (max2 === null || ch.value < max2)
+          max2 = ch.value;
+      }
+    }
+    return max2;
+  }
+};
+ZodBigInt.create = (params2) => {
+  var _a;
+  return new ZodBigInt({
+    checks: [],
+    typeName: ZodFirstPartyTypeKind.ZodBigInt,
+    coerce: (_a = params2 == null ? void 0 : params2.coerce) != null ? _a : false,
+    ...processCreateParams(params2)
+  });
+};
+var ZodBoolean = class extends ZodType {
+  _parse(input) {
+    if (this._def.coerce) {
+      input.data = Boolean(input.data);
+    }
+    const parsedType = this._getType(input);
+    if (parsedType !== ZodParsedType.boolean) {
+      const ctx = this._getOrReturnCtx(input);
+      addIssueToContext(ctx, {
+        code: ZodIssueCode.invalid_type,
+        expected: ZodParsedType.boolean,
+        received: ctx.parsedType
+      });
+      return INVALID;
+    }
+    return OK(input.data);
+  }
+};
+ZodBoolean.create = (params2) => {
+  return new ZodBoolean({
+    typeName: ZodFirstPartyTypeKind.ZodBoolean,
+    coerce: (params2 == null ? void 0 : params2.coerce) || false,
+    ...processCreateParams(params2)
+  });
+};
+var ZodDate = class _ZodDate extends ZodType {
+  _parse(input) {
+    if (this._def.coerce) {
+      input.data = new Date(input.data);
+    }
+    const parsedType = this._getType(input);
+    if (parsedType !== ZodParsedType.date) {
+      const ctx2 = this._getOrReturnCtx(input);
+      addIssueToContext(ctx2, {
+        code: ZodIssueCode.invalid_type,
+        expected: ZodParsedType.date,
+        received: ctx2.parsedType
+      });
+      return INVALID;
+    }
+    if (Number.isNaN(input.data.getTime())) {
+      const ctx2 = this._getOrReturnCtx(input);
+      addIssueToContext(ctx2, {
+        code: ZodIssueCode.invalid_date
+      });
+      return INVALID;
+    }
+    const status = new ParseStatus();
+    let ctx = void 0;
+    for (const check of this._def.checks) {
+      if (check.kind === "min") {
+        if (input.data.getTime() < check.value) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            code: ZodIssueCode.too_small,
+            message: check.message,
+            inclusive: true,
+            exact: false,
+            minimum: check.value,
+            type: "date"
+          });
+          status.dirty();
+        }
+      } else if (check.kind === "max") {
+        if (input.data.getTime() > check.value) {
+          ctx = this._getOrReturnCtx(input, ctx);
+          addIssueToContext(ctx, {
+            code: ZodIssueCode.too_big,
+            message: check.message,
+            inclusive: true,
+            exact: false,
+            maximum: check.value,
+            type: "date"
+          });
+          status.dirty();
+        }
+      } else {
+        util.assertNever(check);
+      }
+    }
+    return {
+      status: status.value,
+      value: new Date(input.data.getTime())
+    };
+  }
+  _addCheck(check) {
+    return new _ZodDate({
+      ...this._def,
+      checks: [...this._def.checks, check]
+    });
+  }
+  min(minDate, message) {
+    return this._addCheck({
+      kind: "min",
+      value: minDate.getTime(),
+      message: errorUtil.toString(message)
+    });
+  }
+  max(maxDate, message) {
+    return this._addCheck({
+      kind: "max",
+      value: maxDate.getTime(),
+      message: errorUtil.toString(message)
+    });
+  }
+  get minDate() {
+    let min2 = null;
+    for (const ch of this._def.checks) {
+      if (ch.kind === "min") {
+        if (min2 === null || ch.value > min2)
+          min2 = ch.value;
+      }
+    }
+    return min2 != null ? new Date(min2) : null;
+  }
+  get maxDate() {
+    let max2 = null;
+    for (const ch of this._def.checks) {
+      if (ch.kind === "max") {
+        if (max2 === null || ch.value < max2)
+          max2 = ch.value;
+      }
+    }
+    return max2 != null ? new Date(max2) : null;
+  }
+};
+ZodDate.create = (params2) => {
+  return new ZodDate({
+    checks: [],
+    coerce: (params2 == null ? void 0 : params2.coerce) || false,
+    typeName: ZodFirstPartyTypeKind.ZodDate,
+    ...processCreateParams(params2)
+  });
+};
+var ZodSymbol = class extends ZodType {
+  _parse(input) {
+    const parsedType = this._getType(input);
+    if (parsedType !== ZodParsedType.symbol) {
+      const ctx = this._getOrReturnCtx(input);
+      addIssueToContext(ctx, {
+        code: ZodIssueCode.invalid_type,
+        expected: ZodParsedType.symbol,
+        received: ctx.parsedType
+      });
+      return INVALID;
+    }
+    return OK(input.data);
+  }
+};
+ZodSymbol.create = (params2) => {
+  return new ZodSymbol({
+    typeName: ZodFirstPartyTypeKind.ZodSymbol,
+    ...processCreateParams(params2)
+  });
+};
+var ZodUndefined = class extends ZodType {
+  _parse(input) {
+    const parsedType = this._getType(input);
+    if (parsedType !== ZodParsedType.undefined) {
+      const ctx = this._getOrReturnCtx(input);
+      addIssueToContext(ctx, {
+        code: ZodIssueCode.invalid_type,
+        expected: ZodParsedType.undefined,
+        received: ctx.parsedType
+      });
+      return INVALID;
+    }
+    return OK(input.data);
+  }
+};
+ZodUndefined.create = (params2) => {
+  return new ZodUndefined({
+    typeName: ZodFirstPartyTypeKind.ZodUndefined,
+    ...processCreateParams(params2)
+  });
+};
+var ZodNull = class extends ZodType {
+  _parse(input) {
+    const parsedType = this._getType(input);
+    if (parsedType !== ZodParsedType.null) {
+      const ctx = this._getOrReturnCtx(input);
+      addIssueToContext(ctx, {
+        code: ZodIssueCode.invalid_type,
+        expected: ZodParsedType.null,
+        received: ctx.parsedType
+      });
+      return INVALID;
+    }
+    return OK(input.data);
+  }
+};
+ZodNull.create = (params2) => {
+  return new ZodNull({
+    typeName: ZodFirstPartyTypeKind.ZodNull,
+    ...processCreateParams(params2)
+  });
+};
+var ZodAny = class extends ZodType {
+  constructor() {
+    super(...arguments);
+    this._any = true;
+  }
+  _parse(input) {
+    return OK(input.data);
+  }
+};
+ZodAny.create = (params2) => {
+  return new ZodAny({
+    typeName: ZodFirstPartyTypeKind.ZodAny,
+    ...processCreateParams(params2)
+  });
+};
+var ZodUnknown = class extends ZodType {
+  constructor() {
+    super(...arguments);
+    this._unknown = true;
+  }
+  _parse(input) {
+    return OK(input.data);
+  }
+};
+ZodUnknown.create = (params2) => {
+  return new ZodUnknown({
+    typeName: ZodFirstPartyTypeKind.ZodUnknown,
+    ...processCreateParams(params2)
+  });
+};
+var ZodNever = class extends ZodType {
+  _parse(input) {
+    const ctx = this._getOrReturnCtx(input);
+    addIssueToContext(ctx, {
+      code: ZodIssueCode.invalid_type,
+      expected: ZodParsedType.never,
+      received: ctx.parsedType
+    });
+    return INVALID;
+  }
+};
+ZodNever.create = (params2) => {
+  return new ZodNever({
+    typeName: ZodFirstPartyTypeKind.ZodNever,
+    ...processCreateParams(params2)
+  });
+};
+var ZodVoid = class extends ZodType {
+  _parse(input) {
+    const parsedType = this._getType(input);
+    if (parsedType !== ZodParsedType.undefined) {
+      const ctx = this._getOrReturnCtx(input);
+      addIssueToContext(ctx, {
+        code: ZodIssueCode.invalid_type,
+        expected: ZodParsedType.void,
+        received: ctx.parsedType
+      });
+      return INVALID;
+    }
+    return OK(input.data);
+  }
+};
+ZodVoid.create = (params2) => {
+  return new ZodVoid({
+    typeName: ZodFirstPartyTypeKind.ZodVoid,
+    ...processCreateParams(params2)
+  });
+};
+var ZodArray = class _ZodArray extends ZodType {
+  _parse(input) {
+    const { ctx, status } = this._processInputParams(input);
+    const def = this._def;
+    if (ctx.parsedType !== ZodParsedType.array) {
+      addIssueToContext(ctx, {
+        code: ZodIssueCode.invalid_type,
+        expected: ZodParsedType.array,
+        received: ctx.parsedType
+      });
+      return INVALID;
+    }
+    if (def.exactLength !== null) {
+      const tooBig = ctx.data.length > def.exactLength.value;
+      const tooSmall = ctx.data.length < def.exactLength.value;
+      if (tooBig || tooSmall) {
+        addIssueToContext(ctx, {
+          code: tooBig ? ZodIssueCode.too_big : ZodIssueCode.too_small,
+          minimum: tooSmall ? def.exactLength.value : void 0,
+          maximum: tooBig ? def.exactLength.value : void 0,
+          type: "array",
+          inclusive: true,
+          exact: true,
+          message: def.exactLength.message
+        });
+        status.dirty();
+      }
+    }
+    if (def.minLength !== null) {
+      if (ctx.data.length < def.minLength.value) {
+        addIssueToContext(ctx, {
+          code: ZodIssueCode.too_small,
+          minimum: def.minLength.value,
+          type: "array",
+          inclusive: true,
+          exact: false,
+          message: def.minLength.message
+        });
+        status.dirty();
+      }
+    }
+    if (def.maxLength !== null) {
+      if (ctx.data.length > def.maxLength.value) {
+        addIssueToContext(ctx, {
+          code: ZodIssueCode.too_big,
+          maximum: def.maxLength.value,
+          type: "array",
+          inclusive: true,
+          exact: false,
+          message: def.maxLength.message
+        });
+        status.dirty();
+      }
+    }
+    if (ctx.common.async) {
+      return Promise.all([...ctx.data].map((item, i) => {
+        return def.type._parseAsync(new ParseInputLazyPath(ctx, item, ctx.path, i));
+      })).then((result2) => {
+        return ParseStatus.mergeArray(status, result2);
+      });
+    }
+    const result = [...ctx.data].map((item, i) => {
+      return def.type._parseSync(new ParseInputLazyPath(ctx, item, ctx.path, i));
+    });
+    return ParseStatus.mergeArray(status, result);
+  }
+  get element() {
+    return this._def.type;
+  }
+  min(minLength, message) {
+    return new _ZodArray({
+      ...this._def,
+      minLength: { value: minLength, message: errorUtil.toString(message) }
+    });
+  }
+  max(maxLength, message) {
+    return new _ZodArray({
+      ...this._def,
+      maxLength: { value: maxLength, message: errorUtil.toString(message) }
+    });
+  }
+  length(len, message) {
+    return new _ZodArray({
+      ...this._def,
+      exactLength: { value: len, message: errorUtil.toString(message) }
+    });
+  }
+  nonempty(message) {
+    return this.min(1, message);
+  }
+};
+ZodArray.create = (schema, params2) => {
+  return new ZodArray({
+    type: schema,
+    minLength: null,
+    maxLength: null,
+    exactLength: null,
+    typeName: ZodFirstPartyTypeKind.ZodArray,
+    ...processCreateParams(params2)
+  });
+};
+function deepPartialify(schema) {
+  if (schema instanceof ZodObject) {
+    const newShape = {};
+    for (const key in schema.shape) {
+      const fieldSchema = schema.shape[key];
+      newShape[key] = ZodOptional.create(deepPartialify(fieldSchema));
+    }
+    return new ZodObject({
+      ...schema._def,
+      shape: () => newShape
+    });
+  } else if (schema instanceof ZodArray) {
+    return new ZodArray({
+      ...schema._def,
+      type: deepPartialify(schema.element)
+    });
+  } else if (schema instanceof ZodOptional) {
+    return ZodOptional.create(deepPartialify(schema.unwrap()));
+  } else if (schema instanceof ZodNullable) {
+    return ZodNullable.create(deepPartialify(schema.unwrap()));
+  } else if (schema instanceof ZodTuple) {
+    return ZodTuple.create(schema.items.map((item) => deepPartialify(item)));
+  } else {
+    return schema;
+  }
+}
+var ZodObject = class _ZodObject extends ZodType {
+  constructor() {
+    super(...arguments);
+    this._cached = null;
+    this.nonstrict = this.passthrough;
+    this.augment = this.extend;
+  }
+  _getCached() {
+    if (this._cached !== null)
+      return this._cached;
+    const shape = this._def.shape();
+    const keys2 = util.objectKeys(shape);
+    this._cached = { shape, keys: keys2 };
+    return this._cached;
+  }
+  _parse(input) {
+    const parsedType = this._getType(input);
+    if (parsedType !== ZodParsedType.object) {
+      const ctx2 = this._getOrReturnCtx(input);
+      addIssueToContext(ctx2, {
+        code: ZodIssueCode.invalid_type,
+        expected: ZodParsedType.object,
+        received: ctx2.parsedType
+      });
+      return INVALID;
+    }
+    const { status, ctx } = this._processInputParams(input);
+    const { shape, keys: shapeKeys } = this._getCached();
+    const extraKeys = [];
+    if (!(this._def.catchall instanceof ZodNever && this._def.unknownKeys === "strip")) {
+      for (const key in ctx.data) {
+        if (!shapeKeys.includes(key)) {
+          extraKeys.push(key);
+        }
+      }
+    }
+    const pairs = [];
+    for (const key of shapeKeys) {
+      const keyValidator = shape[key];
+      const value = ctx.data[key];
+      pairs.push({
+        key: { status: "valid", value: key },
+        value: keyValidator._parse(new ParseInputLazyPath(ctx, value, ctx.path, key)),
+        alwaysSet: key in ctx.data
+      });
+    }
+    if (this._def.catchall instanceof ZodNever) {
+      const unknownKeys = this._def.unknownKeys;
+      if (unknownKeys === "passthrough") {
+        for (const key of extraKeys) {
+          pairs.push({
+            key: { status: "valid", value: key },
+            value: { status: "valid", value: ctx.data[key] }
+          });
+        }
+      } else if (unknownKeys === "strict") {
+        if (extraKeys.length > 0) {
+          addIssueToContext(ctx, {
+            code: ZodIssueCode.unrecognized_keys,
+            keys: extraKeys
+          });
+          status.dirty();
+        }
+      } else if (unknownKeys === "strip") {
+      } else {
+        throw new Error(`Internal ZodObject error: invalid unknownKeys value.`);
+      }
+    } else {
+      const catchall = this._def.catchall;
+      for (const key of extraKeys) {
+        const value = ctx.data[key];
+        pairs.push({
+          key: { status: "valid", value: key },
+          value: catchall._parse(
+            new ParseInputLazyPath(ctx, value, ctx.path, key)
+            //, ctx.child(key), value, getParsedType(value)
+          ),
+          alwaysSet: key in ctx.data
+        });
+      }
+    }
+    if (ctx.common.async) {
+      return Promise.resolve().then(async () => {
+        const syncPairs = [];
+        for (const pair of pairs) {
+          const key = await pair.key;
+          const value = await pair.value;
+          syncPairs.push({
+            key,
+            value,
+            alwaysSet: pair.alwaysSet
+          });
+        }
+        return syncPairs;
+      }).then((syncPairs) => {
+        return ParseStatus.mergeObjectSync(status, syncPairs);
+      });
+    } else {
+      return ParseStatus.mergeObjectSync(status, pairs);
+    }
+  }
+  get shape() {
+    return this._def.shape();
+  }
+  strict(message) {
+    errorUtil.errToObj;
+    return new _ZodObject({
+      ...this._def,
+      unknownKeys: "strict",
+      ...message !== void 0 ? {
+        errorMap: (issue, ctx) => {
+          var _a, _b, _c, _d;
+          const defaultError = (_c = (_b = (_a = this._def).errorMap) == null ? void 0 : _b.call(_a, issue, ctx).message) != null ? _c : ctx.defaultError;
+          if (issue.code === "unrecognized_keys")
+            return {
+              message: (_d = errorUtil.errToObj(message).message) != null ? _d : defaultError
+            };
+          return {
+            message: defaultError
+          };
+        }
+      } : {}
+    });
+  }
+  strip() {
+    return new _ZodObject({
+      ...this._def,
+      unknownKeys: "strip"
+    });
+  }
+  passthrough() {
+    return new _ZodObject({
+      ...this._def,
+      unknownKeys: "passthrough"
+    });
+  }
+  // const AugmentFactory =
+  //   <Def extends ZodObjectDef>(def: Def) =>
+  //   <Augmentation extends ZodRawShape>(
+  //     augmentation: Augmentation
+  //   ): ZodObject<
+  //     extendShape<ReturnType<Def["shape"]>, Augmentation>,
+  //     Def["unknownKeys"],
+  //     Def["catchall"]
+  //   > => {
+  //     return new ZodObject({
+  //       ...def,
+  //       shape: () => ({
+  //         ...def.shape(),
+  //         ...augmentation,
+  //       }),
+  //     }) as any;
+  //   };
+  extend(augmentation) {
+    return new _ZodObject({
+      ...this._def,
+      shape: () => ({
+        ...this._def.shape(),
+        ...augmentation
+      })
+    });
+  }
+  /**
+   * Prior to zod@1.0.12 there was a bug in the
+   * inferred type of merged objects. Please
+   * upgrade if you are experiencing issues.
+   */
+  merge(merging) {
+    const merged = new _ZodObject({
+      unknownKeys: merging._def.unknownKeys,
+      catchall: merging._def.catchall,
+      shape: () => ({
+        ...this._def.shape(),
+        ...merging._def.shape()
+      }),
+      typeName: ZodFirstPartyTypeKind.ZodObject
+    });
+    return merged;
+  }
+  // merge<
+  //   Incoming extends AnyZodObject,
+  //   Augmentation extends Incoming["shape"],
+  //   NewOutput extends {
+  //     [k in keyof Augmentation | keyof Output]: k extends keyof Augmentation
+  //       ? Augmentation[k]["_output"]
+  //       : k extends keyof Output
+  //       ? Output[k]
+  //       : never;
+  //   },
+  //   NewInput extends {
+  //     [k in keyof Augmentation | keyof Input]: k extends keyof Augmentation
+  //       ? Augmentation[k]["_input"]
+  //       : k extends keyof Input
+  //       ? Input[k]
+  //       : never;
+  //   }
+  // >(
+  //   merging: Incoming
+  // ): ZodObject<
+  //   extendShape<T, ReturnType<Incoming["_def"]["shape"]>>,
+  //   Incoming["_def"]["unknownKeys"],
+  //   Incoming["_def"]["catchall"],
+  //   NewOutput,
+  //   NewInput
+  // > {
+  //   const merged: any = new ZodObject({
+  //     unknownKeys: merging._def.unknownKeys,
+  //     catchall: merging._def.catchall,
+  //     shape: () =>
+  //       objectUtil.mergeShapes(this._def.shape(), merging._def.shape()),
+  //     typeName: ZodFirstPartyTypeKind.ZodObject,
+  //   }) as any;
+  //   return merged;
+  // }
+  setKey(key, schema) {
+    return this.augment({ [key]: schema });
+  }
+  // merge<Incoming extends AnyZodObject>(
+  //   merging: Incoming
+  // ): //ZodObject<T & Incoming["_shape"], UnknownKeys, Catchall> = (merging) => {
+  // ZodObject<
+  //   extendShape<T, ReturnType<Incoming["_def"]["shape"]>>,
+  //   Incoming["_def"]["unknownKeys"],
+  //   Incoming["_def"]["catchall"]
+  // > {
+  //   // const mergedShape = objectUtil.mergeShapes(
+  //   //   this._def.shape(),
+  //   //   merging._def.shape()
+  //   // );
+  //   const merged: any = new ZodObject({
+  //     unknownKeys: merging._def.unknownKeys,
+  //     catchall: merging._def.catchall,
+  //     shape: () =>
+  //       objectUtil.mergeShapes(this._def.shape(), merging._def.shape()),
+  //     typeName: ZodFirstPartyTypeKind.ZodObject,
+  //   }) as any;
+  //   return merged;
+  // }
+  catchall(index2) {
+    return new _ZodObject({
+      ...this._def,
+      catchall: index2
+    });
+  }
+  pick(mask) {
+    const shape = {};
+    for (const key of util.objectKeys(mask)) {
+      if (mask[key] && this.shape[key]) {
+        shape[key] = this.shape[key];
+      }
+    }
+    return new _ZodObject({
+      ...this._def,
+      shape: () => shape
+    });
+  }
+  omit(mask) {
+    const shape = {};
+    for (const key of util.objectKeys(this.shape)) {
+      if (!mask[key]) {
+        shape[key] = this.shape[key];
+      }
+    }
+    return new _ZodObject({
+      ...this._def,
+      shape: () => shape
+    });
+  }
+  /**
+   * @deprecated
+   */
+  deepPartial() {
+    return deepPartialify(this);
+  }
+  partial(mask) {
+    const newShape = {};
+    for (const key of util.objectKeys(this.shape)) {
+      const fieldSchema = this.shape[key];
+      if (mask && !mask[key]) {
+        newShape[key] = fieldSchema;
+      } else {
+        newShape[key] = fieldSchema.optional();
+      }
+    }
+    return new _ZodObject({
+      ...this._def,
+      shape: () => newShape
+    });
+  }
+  required(mask) {
+    const newShape = {};
+    for (const key of util.objectKeys(this.shape)) {
+      if (mask && !mask[key]) {
+        newShape[key] = this.shape[key];
+      } else {
+        const fieldSchema = this.shape[key];
+        let newField = fieldSchema;
+        while (newField instanceof ZodOptional) {
+          newField = newField._def.innerType;
+        }
+        newShape[key] = newField;
+      }
+    }
+    return new _ZodObject({
+      ...this._def,
+      shape: () => newShape
+    });
+  }
+  keyof() {
+    return createZodEnum(util.objectKeys(this.shape));
+  }
+};
+ZodObject.create = (shape, params2) => {
+  return new ZodObject({
+    shape: () => shape,
+    unknownKeys: "strip",
+    catchall: ZodNever.create(),
+    typeName: ZodFirstPartyTypeKind.ZodObject,
+    ...processCreateParams(params2)
+  });
+};
+ZodObject.strictCreate = (shape, params2) => {
+  return new ZodObject({
+    shape: () => shape,
+    unknownKeys: "strict",
+    catchall: ZodNever.create(),
+    typeName: ZodFirstPartyTypeKind.ZodObject,
+    ...processCreateParams(params2)
+  });
+};
+ZodObject.lazycreate = (shape, params2) => {
+  return new ZodObject({
+    shape,
+    unknownKeys: "strip",
+    catchall: ZodNever.create(),
+    typeName: ZodFirstPartyTypeKind.ZodObject,
+    ...processCreateParams(params2)
+  });
+};
+var ZodUnion = class extends ZodType {
+  _parse(input) {
+    const { ctx } = this._processInputParams(input);
+    const options = this._def.options;
+    function handleResults(results) {
+      for (const result of results) {
+        if (result.result.status === "valid") {
+          return result.result;
+        }
+      }
+      for (const result of results) {
+        if (result.result.status === "dirty") {
+          ctx.common.issues.push(...result.ctx.common.issues);
+          return result.result;
+        }
+      }
+      const unionErrors = results.map((result) => new ZodError(result.ctx.common.issues));
+      addIssueToContext(ctx, {
+        code: ZodIssueCode.invalid_union,
+        unionErrors
+      });
+      return INVALID;
+    }
+    if (ctx.common.async) {
+      return Promise.all(options.map(async (option) => {
+        const childCtx = {
+          ...ctx,
+          common: {
+            ...ctx.common,
+            issues: []
+          },
+          parent: null
+        };
+        return {
+          result: await option._parseAsync({
+            data: ctx.data,
+            path: ctx.path,
+            parent: childCtx
+          }),
+          ctx: childCtx
+        };
+      })).then(handleResults);
+    } else {
+      let dirty = void 0;
+      const issues = [];
+      for (const option of options) {
+        const childCtx = {
+          ...ctx,
+          common: {
+            ...ctx.common,
+            issues: []
+          },
+          parent: null
+        };
+        const result = option._parseSync({
+          data: ctx.data,
+          path: ctx.path,
+          parent: childCtx
+        });
+        if (result.status === "valid") {
+          return result;
+        } else if (result.status === "dirty" && !dirty) {
+          dirty = { result, ctx: childCtx };
+        }
+        if (childCtx.common.issues.length) {
+          issues.push(childCtx.common.issues);
+        }
+      }
+      if (dirty) {
+        ctx.common.issues.push(...dirty.ctx.common.issues);
+        return dirty.result;
+      }
+      const unionErrors = issues.map((issues2) => new ZodError(issues2));
+      addIssueToContext(ctx, {
+        code: ZodIssueCode.invalid_union,
+        unionErrors
+      });
+      return INVALID;
+    }
+  }
+  get options() {
+    return this._def.options;
+  }
+};
+ZodUnion.create = (types, params2) => {
+  return new ZodUnion({
+    options: types,
+    typeName: ZodFirstPartyTypeKind.ZodUnion,
+    ...processCreateParams(params2)
+  });
+};
+var getDiscriminator = (type) => {
+  if (type instanceof ZodLazy) {
+    return getDiscriminator(type.schema);
+  } else if (type instanceof ZodEffects) {
+    return getDiscriminator(type.innerType());
+  } else if (type instanceof ZodLiteral) {
+    return [type.value];
+  } else if (type instanceof ZodEnum) {
+    return type.options;
+  } else if (type instanceof ZodNativeEnum) {
+    return util.objectValues(type.enum);
+  } else if (type instanceof ZodDefault) {
+    return getDiscriminator(type._def.innerType);
+  } else if (type instanceof ZodUndefined) {
+    return [void 0];
+  } else if (type instanceof ZodNull) {
+    return [null];
+  } else if (type instanceof ZodOptional) {
+    return [void 0, ...getDiscriminator(type.unwrap())];
+  } else if (type instanceof ZodNullable) {
+    return [null, ...getDiscriminator(type.unwrap())];
+  } else if (type instanceof ZodBranded) {
+    return getDiscriminator(type.unwrap());
+  } else if (type instanceof ZodReadonly) {
+    return getDiscriminator(type.unwrap());
+  } else if (type instanceof ZodCatch) {
+    return getDiscriminator(type._def.innerType);
+  } else {
+    return [];
+  }
+};
+var ZodDiscriminatedUnion = class _ZodDiscriminatedUnion extends ZodType {
+  _parse(input) {
+    const { ctx } = this._processInputParams(input);
+    if (ctx.parsedType !== ZodParsedType.object) {
+      addIssueToContext(ctx, {
+        code: ZodIssueCode.invalid_type,
+        expected: ZodParsedType.object,
+        received: ctx.parsedType
+      });
+      return INVALID;
+    }
+    const discriminator = this.discriminator;
+    const discriminatorValue = ctx.data[discriminator];
+    const option = this.optionsMap.get(discriminatorValue);
+    if (!option) {
+      addIssueToContext(ctx, {
+        code: ZodIssueCode.invalid_union_discriminator,
+        options: Array.from(this.optionsMap.keys()),
+        path: [discriminator]
+      });
+      return INVALID;
+    }
+    if (ctx.common.async) {
+      return option._parseAsync({
+        data: ctx.data,
+        path: ctx.path,
+        parent: ctx
+      });
+    } else {
+      return option._parseSync({
+        data: ctx.data,
+        path: ctx.path,
+        parent: ctx
+      });
+    }
+  }
+  get discriminator() {
+    return this._def.discriminator;
+  }
+  get options() {
+    return this._def.options;
+  }
+  get optionsMap() {
+    return this._def.optionsMap;
+  }
+  /**
+   * The constructor of the discriminated union schema. Its behaviour is very similar to that of the normal z.union() constructor.
+   * However, it only allows a union of objects, all of which need to share a discriminator property. This property must
+   * have a different value for each object in the union.
+   * @param discriminator the name of the discriminator property
+   * @param types an array of object schemas
+   * @param params
+   */
+  static create(discriminator, options, params2) {
+    const optionsMap = /* @__PURE__ */ new Map();
+    for (const type of options) {
+      const discriminatorValues = getDiscriminator(type.shape[discriminator]);
+      if (!discriminatorValues.length) {
+        throw new Error(`A discriminator value for key \`${discriminator}\` could not be extracted from all schema options`);
+      }
+      for (const value of discriminatorValues) {
+        if (optionsMap.has(value)) {
+          throw new Error(`Discriminator property ${String(discriminator)} has duplicate value ${String(value)}`);
+        }
+        optionsMap.set(value, type);
+      }
+    }
+    return new _ZodDiscriminatedUnion({
+      typeName: ZodFirstPartyTypeKind.ZodDiscriminatedUnion,
+      discriminator,
+      options,
+      optionsMap,
+      ...processCreateParams(params2)
+    });
+  }
+};
+function mergeValues(a, b) {
+  const aType = getParsedType(a);
+  const bType = getParsedType(b);
+  if (a === b) {
+    return { valid: true, data: a };
+  } else if (aType === ZodParsedType.object && bType === ZodParsedType.object) {
+    const bKeys = util.objectKeys(b);
+    const sharedKeys = util.objectKeys(a).filter((key) => bKeys.indexOf(key) !== -1);
+    const newObj = { ...a, ...b };
+    for (const key of sharedKeys) {
+      const sharedValue = mergeValues(a[key], b[key]);
+      if (!sharedValue.valid) {
+        return { valid: false };
+      }
+      newObj[key] = sharedValue.data;
+    }
+    return { valid: true, data: newObj };
+  } else if (aType === ZodParsedType.array && bType === ZodParsedType.array) {
+    if (a.length !== b.length) {
+      return { valid: false };
+    }
+    const newArray = [];
+    for (let index2 = 0; index2 < a.length; index2++) {
+      const itemA = a[index2];
+      const itemB = b[index2];
+      const sharedValue = mergeValues(itemA, itemB);
+      if (!sharedValue.valid) {
+        return { valid: false };
+      }
+      newArray.push(sharedValue.data);
+    }
+    return { valid: true, data: newArray };
+  } else if (aType === ZodParsedType.date && bType === ZodParsedType.date && +a === +b) {
+    return { valid: true, data: a };
+  } else {
+    return { valid: false };
+  }
+}
+var ZodIntersection = class extends ZodType {
+  _parse(input) {
+    const { status, ctx } = this._processInputParams(input);
+    const handleParsed = (parsedLeft, parsedRight) => {
+      if (isAborted(parsedLeft) || isAborted(parsedRight)) {
+        return INVALID;
+      }
+      const merged = mergeValues(parsedLeft.value, parsedRight.value);
+      if (!merged.valid) {
+        addIssueToContext(ctx, {
+          code: ZodIssueCode.invalid_intersection_types
+        });
+        return INVALID;
+      }
+      if (isDirty(parsedLeft) || isDirty(parsedRight)) {
+        status.dirty();
+      }
+      return { status: status.value, value: merged.data };
+    };
+    if (ctx.common.async) {
+      return Promise.all([
+        this._def.left._parseAsync({
+          data: ctx.data,
+          path: ctx.path,
+          parent: ctx
+        }),
+        this._def.right._parseAsync({
+          data: ctx.data,
+          path: ctx.path,
+          parent: ctx
+        })
+      ]).then(([left, right]) => handleParsed(left, right));
+    } else {
+      return handleParsed(this._def.left._parseSync({
+        data: ctx.data,
+        path: ctx.path,
+        parent: ctx
+      }), this._def.right._parseSync({
+        data: ctx.data,
+        path: ctx.path,
+        parent: ctx
+      }));
+    }
+  }
+};
+ZodIntersection.create = (left, right, params2) => {
+  return new ZodIntersection({
+    left,
+    right,
+    typeName: ZodFirstPartyTypeKind.ZodIntersection,
+    ...processCreateParams(params2)
+  });
+};
+var ZodTuple = class _ZodTuple extends ZodType {
+  _parse(input) {
+    const { status, ctx } = this._processInputParams(input);
+    if (ctx.parsedType !== ZodParsedType.array) {
+      addIssueToContext(ctx, {
+        code: ZodIssueCode.invalid_type,
+        expected: ZodParsedType.array,
+        received: ctx.parsedType
+      });
+      return INVALID;
+    }
+    if (ctx.data.length < this._def.items.length) {
+      addIssueToContext(ctx, {
+        code: ZodIssueCode.too_small,
+        minimum: this._def.items.length,
+        inclusive: true,
+        exact: false,
+        type: "array"
+      });
+      return INVALID;
+    }
+    const rest = this._def.rest;
+    if (!rest && ctx.data.length > this._def.items.length) {
+      addIssueToContext(ctx, {
+        code: ZodIssueCode.too_big,
+        maximum: this._def.items.length,
+        inclusive: true,
+        exact: false,
+        type: "array"
+      });
+      status.dirty();
+    }
+    const items = [...ctx.data].map((item, itemIndex) => {
+      const schema = this._def.items[itemIndex] || this._def.rest;
+      if (!schema)
+        return null;
+      return schema._parse(new ParseInputLazyPath(ctx, item, ctx.path, itemIndex));
+    }).filter((x) => !!x);
+    if (ctx.common.async) {
+      return Promise.all(items).then((results) => {
+        return ParseStatus.mergeArray(status, results);
+      });
+    } else {
+      return ParseStatus.mergeArray(status, items);
+    }
+  }
+  get items() {
+    return this._def.items;
+  }
+  rest(rest) {
+    return new _ZodTuple({
+      ...this._def,
+      rest
+    });
+  }
+};
+ZodTuple.create = (schemas, params2) => {
+  if (!Array.isArray(schemas)) {
+    throw new Error("You must pass an array of schemas to z.tuple([ ... ])");
+  }
+  return new ZodTuple({
+    items: schemas,
+    typeName: ZodFirstPartyTypeKind.ZodTuple,
+    rest: null,
+    ...processCreateParams(params2)
+  });
+};
+var ZodRecord = class _ZodRecord extends ZodType {
+  get keySchema() {
+    return this._def.keyType;
+  }
+  get valueSchema() {
+    return this._def.valueType;
+  }
+  _parse(input) {
+    const { status, ctx } = this._processInputParams(input);
+    if (ctx.parsedType !== ZodParsedType.object) {
+      addIssueToContext(ctx, {
+        code: ZodIssueCode.invalid_type,
+        expected: ZodParsedType.object,
+        received: ctx.parsedType
+      });
+      return INVALID;
+    }
+    const pairs = [];
+    const keyType = this._def.keyType;
+    const valueType = this._def.valueType;
+    for (const key in ctx.data) {
+      pairs.push({
+        key: keyType._parse(new ParseInputLazyPath(ctx, key, ctx.path, key)),
+        value: valueType._parse(new ParseInputLazyPath(ctx, ctx.data[key], ctx.path, key)),
+        alwaysSet: key in ctx.data
+      });
+    }
+    if (ctx.common.async) {
+      return ParseStatus.mergeObjectAsync(status, pairs);
+    } else {
+      return ParseStatus.mergeObjectSync(status, pairs);
+    }
+  }
+  get element() {
+    return this._def.valueType;
+  }
+  static create(first, second, third) {
+    if (second instanceof ZodType) {
+      return new _ZodRecord({
+        keyType: first,
+        valueType: second,
+        typeName: ZodFirstPartyTypeKind.ZodRecord,
+        ...processCreateParams(third)
+      });
+    }
+    return new _ZodRecord({
+      keyType: ZodString.create(),
+      valueType: first,
+      typeName: ZodFirstPartyTypeKind.ZodRecord,
+      ...processCreateParams(second)
+    });
+  }
+};
+var ZodMap = class extends ZodType {
+  get keySchema() {
+    return this._def.keyType;
+  }
+  get valueSchema() {
+    return this._def.valueType;
+  }
+  _parse(input) {
+    const { status, ctx } = this._processInputParams(input);
+    if (ctx.parsedType !== ZodParsedType.map) {
+      addIssueToContext(ctx, {
+        code: ZodIssueCode.invalid_type,
+        expected: ZodParsedType.map,
+        received: ctx.parsedType
+      });
+      return INVALID;
+    }
+    const keyType = this._def.keyType;
+    const valueType = this._def.valueType;
+    const pairs = [...ctx.data.entries()].map(([key, value], index2) => {
+      return {
+        key: keyType._parse(new ParseInputLazyPath(ctx, key, ctx.path, [index2, "key"])),
+        value: valueType._parse(new ParseInputLazyPath(ctx, value, ctx.path, [index2, "value"]))
+      };
+    });
+    if (ctx.common.async) {
+      const finalMap = /* @__PURE__ */ new Map();
+      return Promise.resolve().then(async () => {
+        for (const pair of pairs) {
+          const key = await pair.key;
+          const value = await pair.value;
+          if (key.status === "aborted" || value.status === "aborted") {
+            return INVALID;
+          }
+          if (key.status === "dirty" || value.status === "dirty") {
+            status.dirty();
+          }
+          finalMap.set(key.value, value.value);
+        }
+        return { status: status.value, value: finalMap };
+      });
+    } else {
+      const finalMap = /* @__PURE__ */ new Map();
+      for (const pair of pairs) {
+        const key = pair.key;
+        const value = pair.value;
+        if (key.status === "aborted" || value.status === "aborted") {
+          return INVALID;
+        }
+        if (key.status === "dirty" || value.status === "dirty") {
+          status.dirty();
+        }
+        finalMap.set(key.value, value.value);
+      }
+      return { status: status.value, value: finalMap };
+    }
+  }
+};
+ZodMap.create = (keyType, valueType, params2) => {
+  return new ZodMap({
+    valueType,
+    keyType,
+    typeName: ZodFirstPartyTypeKind.ZodMap,
+    ...processCreateParams(params2)
+  });
+};
+var ZodSet = class _ZodSet extends ZodType {
+  _parse(input) {
+    const { status, ctx } = this._processInputParams(input);
+    if (ctx.parsedType !== ZodParsedType.set) {
+      addIssueToContext(ctx, {
+        code: ZodIssueCode.invalid_type,
+        expected: ZodParsedType.set,
+        received: ctx.parsedType
+      });
+      return INVALID;
+    }
+    const def = this._def;
+    if (def.minSize !== null) {
+      if (ctx.data.size < def.minSize.value) {
+        addIssueToContext(ctx, {
+          code: ZodIssueCode.too_small,
+          minimum: def.minSize.value,
+          type: "set",
+          inclusive: true,
+          exact: false,
+          message: def.minSize.message
+        });
+        status.dirty();
+      }
+    }
+    if (def.maxSize !== null) {
+      if (ctx.data.size > def.maxSize.value) {
+        addIssueToContext(ctx, {
+          code: ZodIssueCode.too_big,
+          maximum: def.maxSize.value,
+          type: "set",
+          inclusive: true,
+          exact: false,
+          message: def.maxSize.message
+        });
+        status.dirty();
+      }
+    }
+    const valueType = this._def.valueType;
+    function finalizeSet(elements2) {
+      const parsedSet = /* @__PURE__ */ new Set();
+      for (const element2 of elements2) {
+        if (element2.status === "aborted")
+          return INVALID;
+        if (element2.status === "dirty")
+          status.dirty();
+        parsedSet.add(element2.value);
+      }
+      return { status: status.value, value: parsedSet };
+    }
+    const elements = [...ctx.data.values()].map((item, i) => valueType._parse(new ParseInputLazyPath(ctx, item, ctx.path, i)));
+    if (ctx.common.async) {
+      return Promise.all(elements).then((elements2) => finalizeSet(elements2));
+    } else {
+      return finalizeSet(elements);
+    }
+  }
+  min(minSize, message) {
+    return new _ZodSet({
+      ...this._def,
+      minSize: { value: minSize, message: errorUtil.toString(message) }
+    });
+  }
+  max(maxSize, message) {
+    return new _ZodSet({
+      ...this._def,
+      maxSize: { value: maxSize, message: errorUtil.toString(message) }
+    });
+  }
+  size(size2, message) {
+    return this.min(size2, message).max(size2, message);
+  }
+  nonempty(message) {
+    return this.min(1, message);
+  }
+};
+ZodSet.create = (valueType, params2) => {
+  return new ZodSet({
+    valueType,
+    minSize: null,
+    maxSize: null,
+    typeName: ZodFirstPartyTypeKind.ZodSet,
+    ...processCreateParams(params2)
+  });
+};
+var ZodFunction = class _ZodFunction extends ZodType {
+  constructor() {
+    super(...arguments);
+    this.validate = this.implement;
+  }
+  _parse(input) {
+    const { ctx } = this._processInputParams(input);
+    if (ctx.parsedType !== ZodParsedType.function) {
+      addIssueToContext(ctx, {
+        code: ZodIssueCode.invalid_type,
+        expected: ZodParsedType.function,
+        received: ctx.parsedType
+      });
+      return INVALID;
+    }
+    function makeArgsIssue(args2, error) {
+      return makeIssue({
+        data: args2,
+        path: ctx.path,
+        errorMaps: [ctx.common.contextualErrorMap, ctx.schemaErrorMap, getErrorMap(), en_default].filter((x) => !!x),
+        issueData: {
+          code: ZodIssueCode.invalid_arguments,
+          argumentsError: error
+        }
+      });
+    }
+    function makeReturnsIssue(returns, error) {
+      return makeIssue({
+        data: returns,
+        path: ctx.path,
+        errorMaps: [ctx.common.contextualErrorMap, ctx.schemaErrorMap, getErrorMap(), en_default].filter((x) => !!x),
+        issueData: {
+          code: ZodIssueCode.invalid_return_type,
+          returnTypeError: error
+        }
+      });
+    }
+    const params2 = { errorMap: ctx.common.contextualErrorMap };
+    const fn = ctx.data;
+    if (this._def.returns instanceof ZodPromise) {
+      const me = this;
+      return OK(async function(...args2) {
+        const error = new ZodError([]);
+        const parsedArgs = await me._def.args.parseAsync(args2, params2).catch((e) => {
+          error.addIssue(makeArgsIssue(args2, e));
+          throw error;
+        });
+        const result = await Reflect.apply(fn, this, parsedArgs);
+        const parsedReturns = await me._def.returns._def.type.parseAsync(result, params2).catch((e) => {
+          error.addIssue(makeReturnsIssue(result, e));
+          throw error;
+        });
+        return parsedReturns;
+      });
+    } else {
+      const me = this;
+      return OK(function(...args2) {
+        const parsedArgs = me._def.args.safeParse(args2, params2);
+        if (!parsedArgs.success) {
+          throw new ZodError([makeArgsIssue(args2, parsedArgs.error)]);
+        }
+        const result = Reflect.apply(fn, this, parsedArgs.data);
+        const parsedReturns = me._def.returns.safeParse(result, params2);
+        if (!parsedReturns.success) {
+          throw new ZodError([makeReturnsIssue(result, parsedReturns.error)]);
+        }
+        return parsedReturns.data;
+      });
+    }
+  }
+  parameters() {
+    return this._def.args;
+  }
+  returnType() {
+    return this._def.returns;
+  }
+  args(...items) {
+    return new _ZodFunction({
+      ...this._def,
+      args: ZodTuple.create(items).rest(ZodUnknown.create())
+    });
+  }
+  returns(returnType) {
+    return new _ZodFunction({
+      ...this._def,
+      returns: returnType
+    });
+  }
+  implement(func) {
+    const validatedFunc = this.parse(func);
+    return validatedFunc;
+  }
+  strictImplement(func) {
+    const validatedFunc = this.parse(func);
+    return validatedFunc;
+  }
+  static create(args2, returns, params2) {
+    return new _ZodFunction({
+      args: args2 ? args2 : ZodTuple.create([]).rest(ZodUnknown.create()),
+      returns: returns || ZodUnknown.create(),
+      typeName: ZodFirstPartyTypeKind.ZodFunction,
+      ...processCreateParams(params2)
+    });
+  }
+};
+var ZodLazy = class extends ZodType {
+  get schema() {
+    return this._def.getter();
+  }
+  _parse(input) {
+    const { ctx } = this._processInputParams(input);
+    const lazySchema = this._def.getter();
+    return lazySchema._parse({ data: ctx.data, path: ctx.path, parent: ctx });
+  }
+};
+ZodLazy.create = (getter, params2) => {
+  return new ZodLazy({
+    getter,
+    typeName: ZodFirstPartyTypeKind.ZodLazy,
+    ...processCreateParams(params2)
+  });
+};
+var ZodLiteral = class extends ZodType {
+  _parse(input) {
+    if (input.data !== this._def.value) {
+      const ctx = this._getOrReturnCtx(input);
+      addIssueToContext(ctx, {
+        received: ctx.data,
+        code: ZodIssueCode.invalid_literal,
+        expected: this._def.value
+      });
+      return INVALID;
+    }
+    return { status: "valid", value: input.data };
+  }
+  get value() {
+    return this._def.value;
+  }
+};
+ZodLiteral.create = (value, params2) => {
+  return new ZodLiteral({
+    value,
+    typeName: ZodFirstPartyTypeKind.ZodLiteral,
+    ...processCreateParams(params2)
+  });
+};
+function createZodEnum(values, params2) {
+  return new ZodEnum({
+    values,
+    typeName: ZodFirstPartyTypeKind.ZodEnum,
+    ...processCreateParams(params2)
+  });
+}
+var ZodEnum = class _ZodEnum extends ZodType {
+  _parse(input) {
+    if (typeof input.data !== "string") {
+      const ctx = this._getOrReturnCtx(input);
+      const expectedValues = this._def.values;
+      addIssueToContext(ctx, {
+        expected: util.joinValues(expectedValues),
+        received: ctx.parsedType,
+        code: ZodIssueCode.invalid_type
+      });
+      return INVALID;
+    }
+    if (!this._cache) {
+      this._cache = new Set(this._def.values);
+    }
+    if (!this._cache.has(input.data)) {
+      const ctx = this._getOrReturnCtx(input);
+      const expectedValues = this._def.values;
+      addIssueToContext(ctx, {
+        received: ctx.data,
+        code: ZodIssueCode.invalid_enum_value,
+        options: expectedValues
+      });
+      return INVALID;
+    }
+    return OK(input.data);
+  }
+  get options() {
+    return this._def.values;
+  }
+  get enum() {
+    const enumValues = {};
+    for (const val of this._def.values) {
+      enumValues[val] = val;
+    }
+    return enumValues;
+  }
+  get Values() {
+    const enumValues = {};
+    for (const val of this._def.values) {
+      enumValues[val] = val;
+    }
+    return enumValues;
+  }
+  get Enum() {
+    const enumValues = {};
+    for (const val of this._def.values) {
+      enumValues[val] = val;
+    }
+    return enumValues;
+  }
+  extract(values, newDef = this._def) {
+    return _ZodEnum.create(values, {
+      ...this._def,
+      ...newDef
+    });
+  }
+  exclude(values, newDef = this._def) {
+    return _ZodEnum.create(this.options.filter((opt) => !values.includes(opt)), {
+      ...this._def,
+      ...newDef
+    });
+  }
+};
+ZodEnum.create = createZodEnum;
+var ZodNativeEnum = class extends ZodType {
+  _parse(input) {
+    const nativeEnumValues = util.getValidEnumValues(this._def.values);
+    const ctx = this._getOrReturnCtx(input);
+    if (ctx.parsedType !== ZodParsedType.string && ctx.parsedType !== ZodParsedType.number) {
+      const expectedValues = util.objectValues(nativeEnumValues);
+      addIssueToContext(ctx, {
+        expected: util.joinValues(expectedValues),
+        received: ctx.parsedType,
+        code: ZodIssueCode.invalid_type
+      });
+      return INVALID;
+    }
+    if (!this._cache) {
+      this._cache = new Set(util.getValidEnumValues(this._def.values));
+    }
+    if (!this._cache.has(input.data)) {
+      const expectedValues = util.objectValues(nativeEnumValues);
+      addIssueToContext(ctx, {
+        received: ctx.data,
+        code: ZodIssueCode.invalid_enum_value,
+        options: expectedValues
+      });
+      return INVALID;
+    }
+    return OK(input.data);
+  }
+  get enum() {
+    return this._def.values;
+  }
+};
+ZodNativeEnum.create = (values, params2) => {
+  return new ZodNativeEnum({
+    values,
+    typeName: ZodFirstPartyTypeKind.ZodNativeEnum,
+    ...processCreateParams(params2)
+  });
+};
+var ZodPromise = class extends ZodType {
+  unwrap() {
+    return this._def.type;
+  }
+  _parse(input) {
+    const { ctx } = this._processInputParams(input);
+    if (ctx.parsedType !== ZodParsedType.promise && ctx.common.async === false) {
+      addIssueToContext(ctx, {
+        code: ZodIssueCode.invalid_type,
+        expected: ZodParsedType.promise,
+        received: ctx.parsedType
+      });
+      return INVALID;
+    }
+    const promisified = ctx.parsedType === ZodParsedType.promise ? ctx.data : Promise.resolve(ctx.data);
+    return OK(promisified.then((data) => {
+      return this._def.type.parseAsync(data, {
+        path: ctx.path,
+        errorMap: ctx.common.contextualErrorMap
+      });
+    }));
+  }
+};
+ZodPromise.create = (schema, params2) => {
+  return new ZodPromise({
+    type: schema,
+    typeName: ZodFirstPartyTypeKind.ZodPromise,
+    ...processCreateParams(params2)
+  });
+};
+var ZodEffects = class extends ZodType {
+  innerType() {
+    return this._def.schema;
+  }
+  sourceType() {
+    return this._def.schema._def.typeName === ZodFirstPartyTypeKind.ZodEffects ? this._def.schema.sourceType() : this._def.schema;
+  }
+  _parse(input) {
+    const { status, ctx } = this._processInputParams(input);
+    const effect = this._def.effect || null;
+    const checkCtx = {
+      addIssue: (arg) => {
+        addIssueToContext(ctx, arg);
+        if (arg.fatal) {
+          status.abort();
+        } else {
+          status.dirty();
+        }
+      },
+      get path() {
+        return ctx.path;
+      }
+    };
+    checkCtx.addIssue = checkCtx.addIssue.bind(checkCtx);
+    if (effect.type === "preprocess") {
+      const processed = effect.transform(ctx.data, checkCtx);
+      if (ctx.common.async) {
+        return Promise.resolve(processed).then(async (processed2) => {
+          if (status.value === "aborted")
+            return INVALID;
+          const result = await this._def.schema._parseAsync({
+            data: processed2,
+            path: ctx.path,
+            parent: ctx
+          });
+          if (result.status === "aborted")
+            return INVALID;
+          if (result.status === "dirty")
+            return DIRTY(result.value);
+          if (status.value === "dirty")
+            return DIRTY(result.value);
+          return result;
+        });
+      } else {
+        if (status.value === "aborted")
+          return INVALID;
+        const result = this._def.schema._parseSync({
+          data: processed,
+          path: ctx.path,
+          parent: ctx
+        });
+        if (result.status === "aborted")
+          return INVALID;
+        if (result.status === "dirty")
+          return DIRTY(result.value);
+        if (status.value === "dirty")
+          return DIRTY(result.value);
+        return result;
+      }
+    }
+    if (effect.type === "refinement") {
+      const executeRefinement = (acc) => {
+        const result = effect.refinement(acc, checkCtx);
+        if (ctx.common.async) {
+          return Promise.resolve(result);
+        }
+        if (result instanceof Promise) {
+          throw new Error("Async refinement encountered during synchronous parse operation. Use .parseAsync instead.");
+        }
+        return acc;
+      };
+      if (ctx.common.async === false) {
+        const inner = this._def.schema._parseSync({
+          data: ctx.data,
+          path: ctx.path,
+          parent: ctx
+        });
+        if (inner.status === "aborted")
+          return INVALID;
+        if (inner.status === "dirty")
+          status.dirty();
+        executeRefinement(inner.value);
+        return { status: status.value, value: inner.value };
+      } else {
+        return this._def.schema._parseAsync({ data: ctx.data, path: ctx.path, parent: ctx }).then((inner) => {
+          if (inner.status === "aborted")
+            return INVALID;
+          if (inner.status === "dirty")
+            status.dirty();
+          return executeRefinement(inner.value).then(() => {
+            return { status: status.value, value: inner.value };
+          });
+        });
+      }
+    }
+    if (effect.type === "transform") {
+      if (ctx.common.async === false) {
+        const base = this._def.schema._parseSync({
+          data: ctx.data,
+          path: ctx.path,
+          parent: ctx
+        });
+        if (!isValid(base))
+          return INVALID;
+        const result = effect.transform(base.value, checkCtx);
+        if (result instanceof Promise) {
+          throw new Error(`Asynchronous transform encountered during synchronous parse operation. Use .parseAsync instead.`);
+        }
+        return { status: status.value, value: result };
+      } else {
+        return this._def.schema._parseAsync({ data: ctx.data, path: ctx.path, parent: ctx }).then((base) => {
+          if (!isValid(base))
+            return INVALID;
+          return Promise.resolve(effect.transform(base.value, checkCtx)).then((result) => ({
+            status: status.value,
+            value: result
+          }));
+        });
+      }
+    }
+    util.assertNever(effect);
+  }
+};
+ZodEffects.create = (schema, effect, params2) => {
+  return new ZodEffects({
+    schema,
+    typeName: ZodFirstPartyTypeKind.ZodEffects,
+    effect,
+    ...processCreateParams(params2)
+  });
+};
+ZodEffects.createWithPreprocess = (preprocess, schema, params2) => {
+  return new ZodEffects({
+    schema,
+    effect: { type: "preprocess", transform: preprocess },
+    typeName: ZodFirstPartyTypeKind.ZodEffects,
+    ...processCreateParams(params2)
+  });
+};
+var ZodOptional = class extends ZodType {
+  _parse(input) {
+    const parsedType = this._getType(input);
+    if (parsedType === ZodParsedType.undefined) {
+      return OK(void 0);
+    }
+    return this._def.innerType._parse(input);
+  }
+  unwrap() {
+    return this._def.innerType;
+  }
+};
+ZodOptional.create = (type, params2) => {
+  return new ZodOptional({
+    innerType: type,
+    typeName: ZodFirstPartyTypeKind.ZodOptional,
+    ...processCreateParams(params2)
+  });
+};
+var ZodNullable = class extends ZodType {
+  _parse(input) {
+    const parsedType = this._getType(input);
+    if (parsedType === ZodParsedType.null) {
+      return OK(null);
+    }
+    return this._def.innerType._parse(input);
+  }
+  unwrap() {
+    return this._def.innerType;
+  }
+};
+ZodNullable.create = (type, params2) => {
+  return new ZodNullable({
+    innerType: type,
+    typeName: ZodFirstPartyTypeKind.ZodNullable,
+    ...processCreateParams(params2)
+  });
+};
+var ZodDefault = class extends ZodType {
+  _parse(input) {
+    const { ctx } = this._processInputParams(input);
+    let data = ctx.data;
+    if (ctx.parsedType === ZodParsedType.undefined) {
+      data = this._def.defaultValue();
+    }
+    return this._def.innerType._parse({
+      data,
+      path: ctx.path,
+      parent: ctx
+    });
+  }
+  removeDefault() {
+    return this._def.innerType;
+  }
+};
+ZodDefault.create = (type, params2) => {
+  return new ZodDefault({
+    innerType: type,
+    typeName: ZodFirstPartyTypeKind.ZodDefault,
+    defaultValue: typeof params2.default === "function" ? params2.default : () => params2.default,
+    ...processCreateParams(params2)
+  });
+};
+var ZodCatch = class extends ZodType {
+  _parse(input) {
+    const { ctx } = this._processInputParams(input);
+    const newCtx = {
+      ...ctx,
+      common: {
+        ...ctx.common,
+        issues: []
+      }
+    };
+    const result = this._def.innerType._parse({
+      data: newCtx.data,
+      path: newCtx.path,
+      parent: {
+        ...newCtx
+      }
+    });
+    if (isAsync(result)) {
+      return result.then((result2) => {
+        return {
+          status: "valid",
+          value: result2.status === "valid" ? result2.value : this._def.catchValue({
+            get error() {
+              return new ZodError(newCtx.common.issues);
+            },
+            input: newCtx.data
+          })
+        };
+      });
+    } else {
+      return {
+        status: "valid",
+        value: result.status === "valid" ? result.value : this._def.catchValue({
+          get error() {
+            return new ZodError(newCtx.common.issues);
+          },
+          input: newCtx.data
+        })
+      };
+    }
+  }
+  removeCatch() {
+    return this._def.innerType;
+  }
+};
+ZodCatch.create = (type, params2) => {
+  return new ZodCatch({
+    innerType: type,
+    typeName: ZodFirstPartyTypeKind.ZodCatch,
+    catchValue: typeof params2.catch === "function" ? params2.catch : () => params2.catch,
+    ...processCreateParams(params2)
+  });
+};
+var ZodNaN = class extends ZodType {
+  _parse(input) {
+    const parsedType = this._getType(input);
+    if (parsedType !== ZodParsedType.nan) {
+      const ctx = this._getOrReturnCtx(input);
+      addIssueToContext(ctx, {
+        code: ZodIssueCode.invalid_type,
+        expected: ZodParsedType.nan,
+        received: ctx.parsedType
+      });
+      return INVALID;
+    }
+    return { status: "valid", value: input.data };
+  }
+};
+ZodNaN.create = (params2) => {
+  return new ZodNaN({
+    typeName: ZodFirstPartyTypeKind.ZodNaN,
+    ...processCreateParams(params2)
+  });
+};
+var BRAND = Symbol("zod_brand");
+var ZodBranded = class extends ZodType {
+  _parse(input) {
+    const { ctx } = this._processInputParams(input);
+    const data = ctx.data;
+    return this._def.type._parse({
+      data,
+      path: ctx.path,
+      parent: ctx
+    });
+  }
+  unwrap() {
+    return this._def.type;
+  }
+};
+var ZodPipeline = class _ZodPipeline extends ZodType {
+  _parse(input) {
+    const { status, ctx } = this._processInputParams(input);
+    if (ctx.common.async) {
+      const handleAsync = async () => {
+        const inResult = await this._def.in._parseAsync({
+          data: ctx.data,
+          path: ctx.path,
+          parent: ctx
+        });
+        if (inResult.status === "aborted")
+          return INVALID;
+        if (inResult.status === "dirty") {
+          status.dirty();
+          return DIRTY(inResult.value);
+        } else {
+          return this._def.out._parseAsync({
+            data: inResult.value,
+            path: ctx.path,
+            parent: ctx
+          });
+        }
+      };
+      return handleAsync();
+    } else {
+      const inResult = this._def.in._parseSync({
+        data: ctx.data,
+        path: ctx.path,
+        parent: ctx
+      });
+      if (inResult.status === "aborted")
+        return INVALID;
+      if (inResult.status === "dirty") {
+        status.dirty();
+        return {
+          status: "dirty",
+          value: inResult.value
+        };
+      } else {
+        return this._def.out._parseSync({
+          data: inResult.value,
+          path: ctx.path,
+          parent: ctx
+        });
+      }
+    }
+  }
+  static create(a, b) {
+    return new _ZodPipeline({
+      in: a,
+      out: b,
+      typeName: ZodFirstPartyTypeKind.ZodPipeline
+    });
+  }
+};
+var ZodReadonly = class extends ZodType {
+  _parse(input) {
+    const result = this._def.innerType._parse(input);
+    const freeze2 = (data) => {
+      if (isValid(data)) {
+        data.value = Object.freeze(data.value);
+      }
+      return data;
+    };
+    return isAsync(result) ? result.then((data) => freeze2(data)) : freeze2(result);
+  }
+  unwrap() {
+    return this._def.innerType;
+  }
+};
+ZodReadonly.create = (type, params2) => {
+  return new ZodReadonly({
+    innerType: type,
+    typeName: ZodFirstPartyTypeKind.ZodReadonly,
+    ...processCreateParams(params2)
+  });
+};
+function cleanParams(params2, data) {
+  const p = typeof params2 === "function" ? params2(data) : typeof params2 === "string" ? { message: params2 } : params2;
+  const p2 = typeof p === "string" ? { message: p } : p;
+  return p2;
+}
+function custom(check, _params = {}, fatal) {
+  if (check)
+    return ZodAny.create().superRefine((data, ctx) => {
+      var _a, _b;
+      const r = check(data);
+      if (r instanceof Promise) {
+        return r.then((r2) => {
+          var _a2, _b2;
+          if (!r2) {
+            const params2 = cleanParams(_params, data);
+            const _fatal = (_b2 = (_a2 = params2.fatal) != null ? _a2 : fatal) != null ? _b2 : true;
+            ctx.addIssue({ code: "custom", ...params2, fatal: _fatal });
+          }
+        });
+      }
+      if (!r) {
+        const params2 = cleanParams(_params, data);
+        const _fatal = (_b = (_a = params2.fatal) != null ? _a : fatal) != null ? _b : true;
+        ctx.addIssue({ code: "custom", ...params2, fatal: _fatal });
+      }
+      return;
+    });
+  return ZodAny.create();
+}
+var late = {
+  object: ZodObject.lazycreate
+};
+var ZodFirstPartyTypeKind;
+(function(ZodFirstPartyTypeKind2) {
+  ZodFirstPartyTypeKind2["ZodString"] = "ZodString";
+  ZodFirstPartyTypeKind2["ZodNumber"] = "ZodNumber";
+  ZodFirstPartyTypeKind2["ZodNaN"] = "ZodNaN";
+  ZodFirstPartyTypeKind2["ZodBigInt"] = "ZodBigInt";
+  ZodFirstPartyTypeKind2["ZodBoolean"] = "ZodBoolean";
+  ZodFirstPartyTypeKind2["ZodDate"] = "ZodDate";
+  ZodFirstPartyTypeKind2["ZodSymbol"] = "ZodSymbol";
+  ZodFirstPartyTypeKind2["ZodUndefined"] = "ZodUndefined";
+  ZodFirstPartyTypeKind2["ZodNull"] = "ZodNull";
+  ZodFirstPartyTypeKind2["ZodAny"] = "ZodAny";
+  ZodFirstPartyTypeKind2["ZodUnknown"] = "ZodUnknown";
+  ZodFirstPartyTypeKind2["ZodNever"] = "ZodNever";
+  ZodFirstPartyTypeKind2["ZodVoid"] = "ZodVoid";
+  ZodFirstPartyTypeKind2["ZodArray"] = "ZodArray";
+  ZodFirstPartyTypeKind2["ZodObject"] = "ZodObject";
+  ZodFirstPartyTypeKind2["ZodUnion"] = "ZodUnion";
+  ZodFirstPartyTypeKind2["ZodDiscriminatedUnion"] = "ZodDiscriminatedUnion";
+  ZodFirstPartyTypeKind2["ZodIntersection"] = "ZodIntersection";
+  ZodFirstPartyTypeKind2["ZodTuple"] = "ZodTuple";
+  ZodFirstPartyTypeKind2["ZodRecord"] = "ZodRecord";
+  ZodFirstPartyTypeKind2["ZodMap"] = "ZodMap";
+  ZodFirstPartyTypeKind2["ZodSet"] = "ZodSet";
+  ZodFirstPartyTypeKind2["ZodFunction"] = "ZodFunction";
+  ZodFirstPartyTypeKind2["ZodLazy"] = "ZodLazy";
+  ZodFirstPartyTypeKind2["ZodLiteral"] = "ZodLiteral";
+  ZodFirstPartyTypeKind2["ZodEnum"] = "ZodEnum";
+  ZodFirstPartyTypeKind2["ZodEffects"] = "ZodEffects";
+  ZodFirstPartyTypeKind2["ZodNativeEnum"] = "ZodNativeEnum";
+  ZodFirstPartyTypeKind2["ZodOptional"] = "ZodOptional";
+  ZodFirstPartyTypeKind2["ZodNullable"] = "ZodNullable";
+  ZodFirstPartyTypeKind2["ZodDefault"] = "ZodDefault";
+  ZodFirstPartyTypeKind2["ZodCatch"] = "ZodCatch";
+  ZodFirstPartyTypeKind2["ZodPromise"] = "ZodPromise";
+  ZodFirstPartyTypeKind2["ZodBranded"] = "ZodBranded";
+  ZodFirstPartyTypeKind2["ZodPipeline"] = "ZodPipeline";
+  ZodFirstPartyTypeKind2["ZodReadonly"] = "ZodReadonly";
+})(ZodFirstPartyTypeKind || (ZodFirstPartyTypeKind = {}));
+var instanceOfType = (cls, params2 = {
+  message: `Input not instance of ${cls.name}`
+}) => custom((data) => data instanceof cls, params2);
+var stringType = ZodString.create;
+var numberType = ZodNumber.create;
+var nanType = ZodNaN.create;
+var bigIntType = ZodBigInt.create;
+var booleanType = ZodBoolean.create;
+var dateType = ZodDate.create;
+var symbolType = ZodSymbol.create;
+var undefinedType = ZodUndefined.create;
+var nullType = ZodNull.create;
+var anyType = ZodAny.create;
+var unknownType = ZodUnknown.create;
+var neverType = ZodNever.create;
+var voidType = ZodVoid.create;
+var arrayType = ZodArray.create;
+var objectType = ZodObject.create;
+var strictObjectType = ZodObject.strictCreate;
+var unionType = ZodUnion.create;
+var discriminatedUnionType = ZodDiscriminatedUnion.create;
+var intersectionType = ZodIntersection.create;
+var tupleType = ZodTuple.create;
+var recordType = ZodRecord.create;
+var mapType = ZodMap.create;
+var setType = ZodSet.create;
+var functionType = ZodFunction.create;
+var lazyType = ZodLazy.create;
+var literalType = ZodLiteral.create;
+var enumType = ZodEnum.create;
+var nativeEnumType = ZodNativeEnum.create;
+var promiseType = ZodPromise.create;
+var effectsType = ZodEffects.create;
+var optionalType = ZodOptional.create;
+var nullableType = ZodNullable.create;
+var preprocessType = ZodEffects.createWithPreprocess;
+var pipelineType = ZodPipeline.create;
+var ostring = () => stringType().optional();
+var onumber = () => numberType().optional();
+var oboolean = () => booleanType().optional();
+var coerce = {
+  string: (arg) => ZodString.create({ ...arg, coerce: true }),
+  number: (arg) => ZodNumber.create({ ...arg, coerce: true }),
+  boolean: (arg) => ZodBoolean.create({
+    ...arg,
+    coerce: true
+  }),
+  bigint: (arg) => ZodBigInt.create({ ...arg, coerce: true }),
+  date: (arg) => ZodDate.create({ ...arg, coerce: true })
+};
+var NEVER = INVALID;
+
+// ../shared/src/protocol/index.ts
+var AuthenticateSchema = external_exports.object({
+  type: external_exports.literal("authenticate"),
+  vaultId: external_exports.string(),
+  secret: external_exports.string()
+});
+var AuthResultSchema = external_exports.object({
+  type: external_exports.literal("auth_result"),
+  success: external_exports.boolean(),
+  message: external_exports.string().optional()
+});
+var RegisterSchema = external_exports.object({
+  type: external_exports.literal("register"),
+  deviceId: external_exports.string(),
+  deviceName: external_exports.string()
+});
+var PeerInfoSchema = external_exports.object({
+  type: external_exports.literal("peer_info"),
+  peers: external_exports.array(external_exports.object({
+    deviceId: external_exports.string(),
+    deviceName: external_exports.string(),
+    lastSeen: external_exports.number()
+  }))
+});
+var CrdtUpdateSchema = external_exports.object({
+  type: external_exports.literal("crdt_update"),
+  file: external_exports.string(),
+  update: external_exports.instanceof(Uint8Array)
+  // Yjs binary update
+});
+var CrdtStateRequestSchema = external_exports.object({
+  type: external_exports.literal("crdt_state_request"),
+  file: external_exports.string()
+});
+var CrdtFullStateSchema = external_exports.object({
+  type: external_exports.literal("crdt_full_state"),
+  file: external_exports.string(),
+  state: external_exports.instanceof(Uint8Array)
+  // Yjs full state snapshot
+});
+var AlertSchema = external_exports.object({
+  type: external_exports.literal("alert"),
+  kind: external_exports.enum(["low_disk_space", "critical_disk_space", "sync_error"]),
+  message: external_exports.string()
+});
+var ProtocolMessageSchema = external_exports.discriminatedUnion("type", [
+  AuthenticateSchema,
+  AuthResultSchema,
+  RegisterSchema,
+  PeerInfoSchema,
+  CrdtUpdateSchema,
+  CrdtStateRequestSchema,
+  CrdtFullStateSchema,
+  AlertSchema
+]);
+
+// ../node_modules/.bun/cbor-x@1.6.0/node_modules/cbor-x/decode.js
+var decoder;
+try {
+  decoder = new TextDecoder();
+} catch (error) {
+}
+var src;
+var srcEnd;
+var position = 0;
+var EMPTY_ARRAY = [];
+var LEGACY_RECORD_INLINE_ID = 105;
+var RECORD_DEFINITIONS_ID = 57342;
+var RECORD_INLINE_ID = 57343;
+var BUNDLED_STRINGS_ID = 57337;
+var PACKED_REFERENCE_TAG_ID = 6;
+var STOP_CODE = {};
+var maxArraySize = 11281e4;
+var maxMapSize = 1681e4;
+var strings = EMPTY_ARRAY;
+var stringPosition = 0;
+var currentDecoder = {};
+var currentStructures;
+var srcString;
+var srcStringStart = 0;
+var srcStringEnd = 0;
+var bundledStrings;
+var referenceMap;
+var currentExtensions = [];
+var currentExtensionRanges = [];
+var packedValues;
+var dataView;
+var restoreMapsAsObject;
+var defaultOptions = {
+  useRecords: false,
+  mapsAsObjects: true
+};
+var sequentialMode = false;
+var inlineObjectReadThreshold = 2;
+try {
+  new Function("");
+} catch (error) {
+  inlineObjectReadThreshold = Infinity;
+}
+var Decoder = class _Decoder {
+  constructor(options) {
+    if (options) {
+      if ((options.keyMap || options._keyMap) && !options.useRecords) {
+        options.useRecords = false;
+        options.mapsAsObjects = true;
+      }
+      if (options.useRecords === false && options.mapsAsObjects === void 0)
+        options.mapsAsObjects = true;
+      if (options.getStructures)
+        options.getShared = options.getStructures;
+      if (options.getShared && !options.structures)
+        (options.structures = []).uninitialized = true;
+      if (options.keyMap) {
+        this.mapKey = /* @__PURE__ */ new Map();
+        for (let [k, v] of Object.entries(options.keyMap))
+          this.mapKey.set(v, k);
+      }
+    }
+    Object.assign(this, options);
+  }
+  /*
+  decodeKey(key) {
+  	return this.keyMap
+  		? Object.keys(this.keyMap)[Object.values(this.keyMap).indexOf(key)] || key
+  		: key
+  }
+  */
+  decodeKey(key) {
+    return this.keyMap ? this.mapKey.get(key) || key : key;
+  }
+  encodeKey(key) {
+    return this.keyMap && this.keyMap.hasOwnProperty(key) ? this.keyMap[key] : key;
+  }
+  encodeKeys(rec) {
+    if (!this._keyMap)
+      return rec;
+    let map2 = /* @__PURE__ */ new Map();
+    for (let [k, v] of Object.entries(rec))
+      map2.set(this._keyMap.hasOwnProperty(k) ? this._keyMap[k] : k, v);
+    return map2;
+  }
+  decodeKeys(map2) {
+    if (!this._keyMap || map2.constructor.name != "Map")
+      return map2;
+    if (!this._mapKey) {
+      this._mapKey = /* @__PURE__ */ new Map();
+      for (let [k, v] of Object.entries(this._keyMap))
+        this._mapKey.set(v, k);
+    }
+    let res = {};
+    map2.forEach((v, k) => res[safeKey(this._mapKey.has(k) ? this._mapKey.get(k) : k)] = v);
+    return res;
+  }
+  mapDecode(source, end) {
+    let res = this.decode(source);
+    if (this._keyMap) {
+      switch (res.constructor.name) {
+        case "Array":
+          return res.map((r) => this.decodeKeys(r));
+      }
+    }
+    return res;
+  }
+  decode(source, end) {
+    if (src) {
+      return saveState(() => {
+        clearSource();
+        return this ? this.decode(source, end) : _Decoder.prototype.decode.call(defaultOptions, source, end);
+      });
+    }
+    srcEnd = end > -1 ? end : source.length;
+    position = 0;
+    stringPosition = 0;
+    srcStringEnd = 0;
+    srcString = null;
+    strings = EMPTY_ARRAY;
+    bundledStrings = null;
+    src = source;
+    try {
+      dataView = source.dataView || (source.dataView = new DataView(source.buffer, source.byteOffset, source.byteLength));
+    } catch (error) {
+      src = null;
+      if (source instanceof Uint8Array)
+        throw error;
+      throw new Error("Source must be a Uint8Array or Buffer but was a " + (source && typeof source == "object" ? source.constructor.name : typeof source));
+    }
+    if (this instanceof _Decoder) {
+      currentDecoder = this;
+      packedValues = this.sharedValues && (this.pack ? new Array(this.maxPrivatePackedValues || 16).concat(this.sharedValues) : this.sharedValues);
+      if (this.structures) {
+        currentStructures = this.structures;
+        return checkedRead();
+      } else if (!currentStructures || currentStructures.length > 0) {
+        currentStructures = [];
+      }
+    } else {
+      currentDecoder = defaultOptions;
+      if (!currentStructures || currentStructures.length > 0)
+        currentStructures = [];
+      packedValues = null;
+    }
+    return checkedRead();
+  }
+  decodeMultiple(source, forEach3) {
+    let values, lastPosition = 0;
+    try {
+      let size2 = source.length;
+      sequentialMode = true;
+      let value = this ? this.decode(source, size2) : defaultDecoder.decode(source, size2);
+      if (forEach3) {
+        if (forEach3(value) === false) {
+          return;
+        }
+        while (position < size2) {
+          lastPosition = position;
+          if (forEach3(checkedRead()) === false) {
+            return;
+          }
+        }
+      } else {
+        values = [value];
+        while (position < size2) {
+          lastPosition = position;
+          values.push(checkedRead());
+        }
+        return values;
+      }
+    } catch (error) {
+      error.lastPosition = lastPosition;
+      error.values = values;
+      throw error;
+    } finally {
+      sequentialMode = false;
+      clearSource();
+    }
+  }
+};
+function checkedRead() {
+  try {
+    let result = read();
+    if (bundledStrings) {
+      if (position >= bundledStrings.postBundlePosition) {
+        let error = new Error("Unexpected bundle position");
+        error.incomplete = true;
+        throw error;
+      }
+      position = bundledStrings.postBundlePosition;
+      bundledStrings = null;
+    }
+    if (position == srcEnd) {
+      currentStructures = null;
+      src = null;
+      if (referenceMap)
+        referenceMap = null;
+    } else if (position > srcEnd) {
+      let error = new Error("Unexpected end of CBOR data");
+      error.incomplete = true;
+      throw error;
+    } else if (!sequentialMode) {
+      throw new Error("Data read, but end of buffer not reached");
+    }
+    return result;
+  } catch (error) {
+    clearSource();
+    if (error instanceof RangeError || error.message.startsWith("Unexpected end of buffer")) {
+      error.incomplete = true;
+    }
+    throw error;
+  }
+}
+function read() {
+  let token = src[position++];
+  let majorType = token >> 5;
+  token = token & 31;
+  if (token > 23) {
+    switch (token) {
+      case 24:
+        token = src[position++];
+        break;
+      case 25:
+        if (majorType == 7) {
+          return getFloat16();
+        }
+        token = dataView.getUint16(position);
+        position += 2;
+        break;
+      case 26:
+        if (majorType == 7) {
+          let value = dataView.getFloat32(position);
+          if (currentDecoder.useFloat32 > 2) {
+            let multiplier = mult10[(src[position] & 127) << 1 | src[position + 1] >> 7];
+            position += 4;
+            return (multiplier * value + (value > 0 ? 0.5 : -0.5) >> 0) / multiplier;
+          }
+          position += 4;
+          return value;
+        }
+        token = dataView.getUint32(position);
+        position += 4;
+        break;
+      case 27:
+        if (majorType == 7) {
+          let value = dataView.getFloat64(position);
+          position += 8;
+          return value;
+        }
+        if (majorType > 1) {
+          if (dataView.getUint32(position) > 0)
+            throw new Error("JavaScript does not support arrays, maps, or strings with length over 4294967295");
+          token = dataView.getUint32(position + 4);
+        } else if (currentDecoder.int64AsNumber) {
+          token = dataView.getUint32(position) * 4294967296;
+          token += dataView.getUint32(position + 4);
+        } else
+          token = dataView.getBigUint64(position);
+        position += 8;
+        break;
+      case 31:
+        switch (majorType) {
+          case 2:
+          case 3:
+            throw new Error("Indefinite length not supported for byte or text strings");
+          case 4:
+            let array = [];
+            let value, i = 0;
+            while ((value = read()) != STOP_CODE) {
+              if (i >= maxArraySize)
+                throw new Error(`Array length exceeds ${maxArraySize}`);
+              array[i++] = value;
+            }
+            return majorType == 4 ? array : majorType == 3 ? array.join("") : Buffer.concat(array);
+          case 5:
+            let key;
+            if (currentDecoder.mapsAsObjects) {
+              let object = {};
+              let i2 = 0;
+              if (currentDecoder.keyMap) {
+                while ((key = read()) != STOP_CODE) {
+                  if (i2++ >= maxMapSize)
+                    throw new Error(`Property count exceeds ${maxMapSize}`);
+                  object[safeKey(currentDecoder.decodeKey(key))] = read();
+                }
+              } else {
+                while ((key = read()) != STOP_CODE) {
+                  if (i2++ >= maxMapSize)
+                    throw new Error(`Property count exceeds ${maxMapSize}`);
+                  object[safeKey(key)] = read();
+                }
+              }
+              return object;
+            } else {
+              if (restoreMapsAsObject) {
+                currentDecoder.mapsAsObjects = true;
+                restoreMapsAsObject = false;
+              }
+              let map2 = /* @__PURE__ */ new Map();
+              if (currentDecoder.keyMap) {
+                let i2 = 0;
+                while ((key = read()) != STOP_CODE) {
+                  if (i2++ >= maxMapSize) {
+                    throw new Error(`Map size exceeds ${maxMapSize}`);
+                  }
+                  map2.set(currentDecoder.decodeKey(key), read());
+                }
+              } else {
+                let i2 = 0;
+                while ((key = read()) != STOP_CODE) {
+                  if (i2++ >= maxMapSize) {
+                    throw new Error(`Map size exceeds ${maxMapSize}`);
+                  }
+                  map2.set(key, read());
+                }
+              }
+              return map2;
+            }
+          case 7:
+            return STOP_CODE;
+          default:
+            throw new Error("Invalid major type for indefinite length " + majorType);
+        }
+      default:
+        throw new Error("Unknown token " + token);
+    }
+  }
+  switch (majorType) {
+    case 0:
+      return token;
+    case 1:
+      return ~token;
+    case 2:
+      return readBin(token);
+    case 3:
+      if (srcStringEnd >= position) {
+        return srcString.slice(position - srcStringStart, (position += token) - srcStringStart);
+      }
+      if (srcStringEnd == 0 && srcEnd < 140 && token < 32) {
+        let string = token < 16 ? shortStringInJS(token) : longStringInJS(token);
+        if (string != null)
+          return string;
+      }
+      return readFixedString(token);
+    case 4:
+      if (token >= maxArraySize)
+        throw new Error(`Array length exceeds ${maxArraySize}`);
+      let array = new Array(token);
+      for (let i = 0; i < token; i++)
+        array[i] = read();
+      return array;
+    case 5:
+      if (token >= maxMapSize)
+        throw new Error(`Map size exceeds ${maxArraySize}`);
+      if (currentDecoder.mapsAsObjects) {
+        let object = {};
+        if (currentDecoder.keyMap)
+          for (let i = 0; i < token; i++)
+            object[safeKey(currentDecoder.decodeKey(read()))] = read();
+        else
+          for (let i = 0; i < token; i++)
+            object[safeKey(read())] = read();
+        return object;
+      } else {
+        if (restoreMapsAsObject) {
+          currentDecoder.mapsAsObjects = true;
+          restoreMapsAsObject = false;
+        }
+        let map2 = /* @__PURE__ */ new Map();
+        if (currentDecoder.keyMap)
+          for (let i = 0; i < token; i++)
+            map2.set(currentDecoder.decodeKey(read()), read());
+        else
+          for (let i = 0; i < token; i++)
+            map2.set(read(), read());
+        return map2;
+      }
+    case 6:
+      if (token >= BUNDLED_STRINGS_ID) {
+        let structure = currentStructures[token & 8191];
+        if (structure) {
+          if (!structure.read)
+            structure.read = createStructureReader(structure);
+          return structure.read();
+        }
+        if (token < 65536) {
+          if (token == RECORD_INLINE_ID) {
+            let length2 = readJustLength();
+            let id2 = read();
+            let structure2 = read();
+            recordDefinition(id2, structure2);
+            let object = {};
+            if (currentDecoder.keyMap)
+              for (let i = 2; i < length2; i++) {
+                let key = currentDecoder.decodeKey(structure2[i - 2]);
+                object[safeKey(key)] = read();
+              }
+            else
+              for (let i = 2; i < length2; i++) {
+                let key = structure2[i - 2];
+                object[safeKey(key)] = read();
+              }
+            return object;
+          } else if (token == RECORD_DEFINITIONS_ID) {
+            let length2 = readJustLength();
+            let id2 = read();
+            for (let i = 2; i < length2; i++) {
+              recordDefinition(id2++, read());
+            }
+            return read();
+          } else if (token == BUNDLED_STRINGS_ID) {
+            return readBundleExt();
+          }
+          if (currentDecoder.getShared) {
+            loadShared();
+            structure = currentStructures[token & 8191];
+            if (structure) {
+              if (!structure.read)
+                structure.read = createStructureReader(structure);
+              return structure.read();
+            }
+          }
+        }
+      }
+      let extension = currentExtensions[token];
+      if (extension) {
+        if (extension.handlesRead)
+          return extension(read);
+        else
+          return extension(read());
+      } else {
+        let input = read();
+        for (let i = 0; i < currentExtensionRanges.length; i++) {
+          let value = currentExtensionRanges[i](token, input);
+          if (value !== void 0)
+            return value;
+        }
+        return new Tag(input, token);
+      }
+    case 7:
+      switch (token) {
+        case 20:
+          return false;
+        case 21:
+          return true;
+        case 22:
+          return null;
+        case 23:
+          return;
+        case 31:
+        default:
+          let packedValue = (packedValues || getPackedValues())[token];
+          if (packedValue !== void 0)
+            return packedValue;
+          throw new Error("Unknown token " + token);
+      }
+    default:
+      if (isNaN(token)) {
+        let error = new Error("Unexpected end of CBOR data");
+        error.incomplete = true;
+        throw error;
+      }
+      throw new Error("Unknown CBOR token " + token);
+  }
+}
+var validName = /^[a-zA-Z_$][a-zA-Z\d_$]*$/;
+function createStructureReader(structure) {
+  if (!structure)
+    throw new Error("Structure is required in record definition");
+  function readObject() {
+    let length2 = src[position++];
+    length2 = length2 & 31;
+    if (length2 > 23) {
+      switch (length2) {
+        case 24:
+          length2 = src[position++];
+          break;
+        case 25:
+          length2 = dataView.getUint16(position);
+          position += 2;
+          break;
+        case 26:
+          length2 = dataView.getUint32(position);
+          position += 4;
+          break;
+        default:
+          throw new Error("Expected array header, but got " + src[position - 1]);
+      }
+    }
+    let compiledReader = this.compiledReader;
+    while (compiledReader) {
+      if (compiledReader.propertyCount === length2)
+        return compiledReader(read);
+      compiledReader = compiledReader.next;
+    }
+    if (this.slowReads++ >= inlineObjectReadThreshold) {
+      let array = this.length == length2 ? this : this.slice(0, length2);
+      compiledReader = currentDecoder.keyMap ? new Function("r", "return {" + array.map((k) => currentDecoder.decodeKey(k)).map((k) => validName.test(k) ? safeKey(k) + ":r()" : "[" + JSON.stringify(k) + "]:r()").join(",") + "}") : new Function("r", "return {" + array.map((key) => validName.test(key) ? safeKey(key) + ":r()" : "[" + JSON.stringify(key) + "]:r()").join(",") + "}");
+      if (this.compiledReader)
+        compiledReader.next = this.compiledReader;
+      compiledReader.propertyCount = length2;
+      this.compiledReader = compiledReader;
+      return compiledReader(read);
+    }
+    let object = {};
+    if (currentDecoder.keyMap)
+      for (let i = 0; i < length2; i++)
+        object[safeKey(currentDecoder.decodeKey(this[i]))] = read();
+    else
+      for (let i = 0; i < length2; i++) {
+        object[safeKey(this[i])] = read();
+      }
+    return object;
+  }
+  structure.slowReads = 0;
+  return readObject;
+}
+function safeKey(key) {
+  if (typeof key === "string")
+    return key === "__proto__" ? "__proto_" : key;
+  if (typeof key === "number" || typeof key === "boolean" || typeof key === "bigint")
+    return key.toString();
+  if (key == null)
+    return key + "";
+  throw new Error("Invalid property name type " + typeof key);
+}
+var readFixedString = readStringJS;
+function readStringJS(length2) {
+  let result;
+  if (length2 < 16) {
+    if (result = shortStringInJS(length2))
+      return result;
+  }
+  if (length2 > 64 && decoder)
+    return decoder.decode(src.subarray(position, position += length2));
+  const end = position + length2;
+  const units = [];
+  result = "";
+  while (position < end) {
+    const byte1 = src[position++];
+    if ((byte1 & 128) === 0) {
+      units.push(byte1);
+    } else if ((byte1 & 224) === 192) {
+      const byte2 = src[position++] & 63;
+      units.push((byte1 & 31) << 6 | byte2);
+    } else if ((byte1 & 240) === 224) {
+      const byte2 = src[position++] & 63;
+      const byte3 = src[position++] & 63;
+      units.push((byte1 & 31) << 12 | byte2 << 6 | byte3);
+    } else if ((byte1 & 248) === 240) {
+      const byte2 = src[position++] & 63;
+      const byte3 = src[position++] & 63;
+      const byte4 = src[position++] & 63;
+      let unit = (byte1 & 7) << 18 | byte2 << 12 | byte3 << 6 | byte4;
+      if (unit > 65535) {
+        unit -= 65536;
+        units.push(unit >>> 10 & 1023 | 55296);
+        unit = 56320 | unit & 1023;
+      }
+      units.push(unit);
+    } else {
+      units.push(byte1);
+    }
+    if (units.length >= 4096) {
+      result += fromCharCode.apply(String, units);
+      units.length = 0;
+    }
+  }
+  if (units.length > 0) {
+    result += fromCharCode.apply(String, units);
+  }
+  return result;
+}
+var fromCharCode = String.fromCharCode;
+function longStringInJS(length2) {
+  let start = position;
+  let bytes = new Array(length2);
+  for (let i = 0; i < length2; i++) {
+    const byte = src[position++];
+    if ((byte & 128) > 0) {
+      position = start;
+      return;
+    }
+    bytes[i] = byte;
+  }
+  return fromCharCode.apply(String, bytes);
+}
+function shortStringInJS(length2) {
+  if (length2 < 4) {
+    if (length2 < 2) {
+      if (length2 === 0)
+        return "";
+      else {
+        let a = src[position++];
+        if ((a & 128) > 1) {
+          position -= 1;
+          return;
+        }
+        return fromCharCode(a);
+      }
+    } else {
+      let a = src[position++];
+      let b = src[position++];
+      if ((a & 128) > 0 || (b & 128) > 0) {
+        position -= 2;
+        return;
+      }
+      if (length2 < 3)
+        return fromCharCode(a, b);
+      let c = src[position++];
+      if ((c & 128) > 0) {
+        position -= 3;
+        return;
+      }
+      return fromCharCode(a, b, c);
+    }
+  } else {
+    let a = src[position++];
+    let b = src[position++];
+    let c = src[position++];
+    let d = src[position++];
+    if ((a & 128) > 0 || (b & 128) > 0 || (c & 128) > 0 || (d & 128) > 0) {
+      position -= 4;
+      return;
+    }
+    if (length2 < 6) {
+      if (length2 === 4)
+        return fromCharCode(a, b, c, d);
+      else {
+        let e = src[position++];
+        if ((e & 128) > 0) {
+          position -= 5;
+          return;
+        }
+        return fromCharCode(a, b, c, d, e);
+      }
+    } else if (length2 < 8) {
+      let e = src[position++];
+      let f = src[position++];
+      if ((e & 128) > 0 || (f & 128) > 0) {
+        position -= 6;
+        return;
+      }
+      if (length2 < 7)
+        return fromCharCode(a, b, c, d, e, f);
+      let g = src[position++];
+      if ((g & 128) > 0) {
+        position -= 7;
+        return;
+      }
+      return fromCharCode(a, b, c, d, e, f, g);
+    } else {
+      let e = src[position++];
+      let f = src[position++];
+      let g = src[position++];
+      let h = src[position++];
+      if ((e & 128) > 0 || (f & 128) > 0 || (g & 128) > 0 || (h & 128) > 0) {
+        position -= 8;
+        return;
+      }
+      if (length2 < 10) {
+        if (length2 === 8)
+          return fromCharCode(a, b, c, d, e, f, g, h);
+        else {
+          let i = src[position++];
+          if ((i & 128) > 0) {
+            position -= 9;
+            return;
+          }
+          return fromCharCode(a, b, c, d, e, f, g, h, i);
+        }
+      } else if (length2 < 12) {
+        let i = src[position++];
+        let j = src[position++];
+        if ((i & 128) > 0 || (j & 128) > 0) {
+          position -= 10;
+          return;
+        }
+        if (length2 < 11)
+          return fromCharCode(a, b, c, d, e, f, g, h, i, j);
+        let k = src[position++];
+        if ((k & 128) > 0) {
+          position -= 11;
+          return;
+        }
+        return fromCharCode(a, b, c, d, e, f, g, h, i, j, k);
+      } else {
+        let i = src[position++];
+        let j = src[position++];
+        let k = src[position++];
+        let l = src[position++];
+        if ((i & 128) > 0 || (j & 128) > 0 || (k & 128) > 0 || (l & 128) > 0) {
+          position -= 12;
+          return;
+        }
+        if (length2 < 14) {
+          if (length2 === 12)
+            return fromCharCode(a, b, c, d, e, f, g, h, i, j, k, l);
+          else {
+            let m = src[position++];
+            if ((m & 128) > 0) {
+              position -= 13;
+              return;
+            }
+            return fromCharCode(a, b, c, d, e, f, g, h, i, j, k, l, m);
+          }
+        } else {
+          let m = src[position++];
+          let n = src[position++];
+          if ((m & 128) > 0 || (n & 128) > 0) {
+            position -= 14;
+            return;
+          }
+          if (length2 < 15)
+            return fromCharCode(a, b, c, d, e, f, g, h, i, j, k, l, m, n);
+          let o = src[position++];
+          if ((o & 128) > 0) {
+            position -= 15;
+            return;
+          }
+          return fromCharCode(a, b, c, d, e, f, g, h, i, j, k, l, m, n, o);
+        }
+      }
+    }
+  }
+}
+function readBin(length2) {
+  return currentDecoder.copyBuffers ? (
+    // specifically use the copying slice (not the node one)
+    Uint8Array.prototype.slice.call(src, position, position += length2)
+  ) : src.subarray(position, position += length2);
+}
+var f32Array = new Float32Array(1);
+var u8Array = new Uint8Array(f32Array.buffer, 0, 4);
+function getFloat16() {
+  let byte0 = src[position++];
+  let byte1 = src[position++];
+  let exponent = (byte0 & 127) >> 2;
+  if (exponent === 31) {
+    if (byte1 || byte0 & 3)
+      return NaN;
+    return byte0 & 128 ? -Infinity : Infinity;
+  }
+  if (exponent === 0) {
+    let abs2 = ((byte0 & 3) << 8 | byte1) / (1 << 24);
+    return byte0 & 128 ? -abs2 : abs2;
+  }
+  u8Array[3] = byte0 & 128 | // sign bit
+  (exponent >> 1) + 56;
+  u8Array[2] = (byte0 & 7) << 5 | // last exponent bit and first two mantissa bits
+  byte1 >> 3;
+  u8Array[1] = byte1 << 5;
+  u8Array[0] = 0;
+  return f32Array[0];
+}
+var keyCache = new Array(4096);
+var Tag = class {
+  constructor(value, tag) {
+    this.value = value;
+    this.tag = tag;
+  }
+};
+currentExtensions[0] = (dateString) => {
+  return new Date(dateString);
+};
+currentExtensions[1] = (epochSec) => {
+  return new Date(Math.round(epochSec * 1e3));
+};
+currentExtensions[2] = (buffer) => {
+  let value = BigInt(0);
+  for (let i = 0, l = buffer.byteLength; i < l; i++) {
+    value = BigInt(buffer[i]) + (value << BigInt(8));
+  }
+  return value;
+};
+currentExtensions[3] = (buffer) => {
+  return BigInt(-1) - currentExtensions[2](buffer);
+};
+currentExtensions[4] = (fraction) => {
+  return +(fraction[1] + "e" + fraction[0]);
+};
+currentExtensions[5] = (fraction) => {
+  return fraction[1] * Math.exp(fraction[0] * Math.log(2));
+};
+var recordDefinition = (id2, structure) => {
+  id2 = id2 - 57344;
+  let existingStructure = currentStructures[id2];
+  if (existingStructure && existingStructure.isShared) {
+    (currentStructures.restoreStructures || (currentStructures.restoreStructures = []))[id2] = existingStructure;
+  }
+  currentStructures[id2] = structure;
+  structure.read = createStructureReader(structure);
+};
+currentExtensions[LEGACY_RECORD_INLINE_ID] = (data) => {
+  let length2 = data.length;
+  let structure = data[1];
+  recordDefinition(data[0], structure);
+  let object = {};
+  for (let i = 2; i < length2; i++) {
+    let key = structure[i - 2];
+    object[safeKey(key)] = data[i];
+  }
+  return object;
+};
+currentExtensions[14] = (value) => {
+  if (bundledStrings)
+    return bundledStrings[0].slice(bundledStrings.position0, bundledStrings.position0 += value);
+  return new Tag(value, 14);
+};
+currentExtensions[15] = (value) => {
+  if (bundledStrings)
+    return bundledStrings[1].slice(bundledStrings.position1, bundledStrings.position1 += value);
+  return new Tag(value, 15);
+};
+var glbl = { Error, RegExp };
+currentExtensions[27] = (data) => {
+  return (glbl[data[0]] || Error)(data[1], data[2]);
+};
+var packedTable = (read2) => {
+  if (src[position++] != 132) {
+    let error = new Error("Packed values structure must be followed by a 4 element array");
+    if (src.length < position)
+      error.incomplete = true;
+    throw error;
+  }
+  let newPackedValues = read2();
+  if (!newPackedValues || !newPackedValues.length) {
+    let error = new Error("Packed values structure must be followed by a 4 element array");
+    error.incomplete = true;
+    throw error;
+  }
+  packedValues = packedValues ? newPackedValues.concat(packedValues.slice(newPackedValues.length)) : newPackedValues;
+  packedValues.prefixes = read2();
+  packedValues.suffixes = read2();
+  return read2();
+};
+packedTable.handlesRead = true;
+currentExtensions[51] = packedTable;
+currentExtensions[PACKED_REFERENCE_TAG_ID] = (data) => {
+  if (!packedValues) {
+    if (currentDecoder.getShared)
+      loadShared();
+    else
+      return new Tag(data, PACKED_REFERENCE_TAG_ID);
+  }
+  if (typeof data == "number")
+    return packedValues[16 + (data >= 0 ? 2 * data : -2 * data - 1)];
+  let error = new Error("No support for non-integer packed references yet");
+  if (data === void 0)
+    error.incomplete = true;
+  throw error;
+};
+currentExtensions[28] = (read2) => {
+  if (!referenceMap) {
+    referenceMap = /* @__PURE__ */ new Map();
+    referenceMap.id = 0;
+  }
+  let id2 = referenceMap.id++;
+  let startingPosition = position;
+  let token = src[position];
+  let target2;
+  if (token >> 5 == 4)
+    target2 = [];
+  else
+    target2 = {};
+  let refEntry = { target: target2 };
+  referenceMap.set(id2, refEntry);
+  let targetProperties = read2();
+  if (refEntry.used) {
+    if (Object.getPrototypeOf(target2) !== Object.getPrototypeOf(targetProperties)) {
+      position = startingPosition;
+      target2 = targetProperties;
+      referenceMap.set(id2, { target: target2 });
+      targetProperties = read2();
+    }
+    return Object.assign(target2, targetProperties);
+  }
+  refEntry.target = targetProperties;
+  return targetProperties;
+};
+currentExtensions[28].handlesRead = true;
+currentExtensions[29] = (id2) => {
+  let refEntry = referenceMap.get(id2);
+  refEntry.used = true;
+  return refEntry.target;
+};
+currentExtensions[258] = (array) => new Set(array);
+(currentExtensions[259] = (read2) => {
+  if (currentDecoder.mapsAsObjects) {
+    currentDecoder.mapsAsObjects = false;
+    restoreMapsAsObject = true;
+  }
+  return read2();
+}).handlesRead = true;
+function combine(a, b) {
+  if (typeof a === "string")
+    return a + b;
+  if (a instanceof Array)
+    return a.concat(b);
+  return Object.assign({}, a, b);
+}
+function getPackedValues() {
+  if (!packedValues) {
+    if (currentDecoder.getShared)
+      loadShared();
+    else
+      throw new Error("No packed values available");
+  }
+  return packedValues;
+}
+var SHARED_DATA_TAG_ID = 1399353956;
+currentExtensionRanges.push((tag, input) => {
+  if (tag >= 225 && tag <= 255)
+    return combine(getPackedValues().prefixes[tag - 224], input);
+  if (tag >= 28704 && tag <= 32767)
+    return combine(getPackedValues().prefixes[tag - 28672], input);
+  if (tag >= 1879052288 && tag <= 2147483647)
+    return combine(getPackedValues().prefixes[tag - 1879048192], input);
+  if (tag >= 216 && tag <= 223)
+    return combine(input, getPackedValues().suffixes[tag - 216]);
+  if (tag >= 27647 && tag <= 28671)
+    return combine(input, getPackedValues().suffixes[tag - 27639]);
+  if (tag >= 1811940352 && tag <= 1879048191)
+    return combine(input, getPackedValues().suffixes[tag - 1811939328]);
+  if (tag == SHARED_DATA_TAG_ID) {
+    return {
+      packedValues,
+      structures: currentStructures.slice(0),
+      version: input
+    };
+  }
+  if (tag == 55799)
+    return input;
+});
+var isLittleEndianMachine = new Uint8Array(new Uint16Array([1]).buffer)[0] == 1;
+var typedArrays = [
+  Uint8Array,
+  Uint8ClampedArray,
+  Uint16Array,
+  Uint32Array,
+  typeof BigUint64Array == "undefined" ? { name: "BigUint64Array" } : BigUint64Array,
+  Int8Array,
+  Int16Array,
+  Int32Array,
+  typeof BigInt64Array == "undefined" ? { name: "BigInt64Array" } : BigInt64Array,
+  Float32Array,
+  Float64Array
+];
+var typedArrayTags = [64, 68, 69, 70, 71, 72, 77, 78, 79, 85, 86];
+for (let i = 0; i < typedArrays.length; i++) {
+  registerTypedArray(typedArrays[i], typedArrayTags[i]);
+}
+function registerTypedArray(TypedArray, tag) {
+  let dvMethod = "get" + TypedArray.name.slice(0, -5);
+  let bytesPerElement;
+  if (typeof TypedArray === "function")
+    bytesPerElement = TypedArray.BYTES_PER_ELEMENT;
+  else
+    TypedArray = null;
+  for (let littleEndian = 0; littleEndian < 2; littleEndian++) {
+    if (!littleEndian && bytesPerElement == 1)
+      continue;
+    let sizeShift = bytesPerElement == 2 ? 1 : bytesPerElement == 4 ? 2 : bytesPerElement == 8 ? 3 : 0;
+    currentExtensions[littleEndian ? tag : tag - 4] = bytesPerElement == 1 || littleEndian == isLittleEndianMachine ? (buffer) => {
+      if (!TypedArray)
+        throw new Error("Could not find typed array for code " + tag);
+      if (!currentDecoder.copyBuffers) {
+        if (bytesPerElement === 1 || bytesPerElement === 2 && !(buffer.byteOffset & 1) || bytesPerElement === 4 && !(buffer.byteOffset & 3) || bytesPerElement === 8 && !(buffer.byteOffset & 7))
+          return new TypedArray(buffer.buffer, buffer.byteOffset, buffer.byteLength >> sizeShift);
+      }
+      return new TypedArray(Uint8Array.prototype.slice.call(buffer, 0).buffer);
+    } : (buffer) => {
+      if (!TypedArray)
+        throw new Error("Could not find typed array for code " + tag);
+      let dv = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+      let elements = buffer.length >> sizeShift;
+      let ta = new TypedArray(elements);
+      let method = dv[dvMethod];
+      for (let i = 0; i < elements; i++) {
+        ta[i] = method.call(dv, i << sizeShift, littleEndian);
+      }
+      return ta;
+    };
+  }
+}
+function readBundleExt() {
+  let length2 = readJustLength();
+  let bundlePosition = position + read();
+  for (let i = 2; i < length2; i++) {
+    let bundleLength = readJustLength();
+    position += bundleLength;
+  }
+  let dataPosition = position;
+  position = bundlePosition;
+  bundledStrings = [readStringJS(readJustLength()), readStringJS(readJustLength())];
+  bundledStrings.position0 = 0;
+  bundledStrings.position1 = 0;
+  bundledStrings.postBundlePosition = position;
+  position = dataPosition;
+  return read();
+}
+function readJustLength() {
+  let token = src[position++] & 31;
+  if (token > 23) {
+    switch (token) {
+      case 24:
+        token = src[position++];
+        break;
+      case 25:
+        token = dataView.getUint16(position);
+        position += 2;
+        break;
+      case 26:
+        token = dataView.getUint32(position);
+        position += 4;
+        break;
+    }
+  }
+  return token;
+}
+function loadShared() {
+  if (currentDecoder.getShared) {
+    let sharedData = saveState(() => {
+      src = null;
+      return currentDecoder.getShared();
+    }) || {};
+    let updatedStructures = sharedData.structures || [];
+    currentDecoder.sharedVersion = sharedData.version;
+    packedValues = currentDecoder.sharedValues = sharedData.packedValues;
+    if (currentStructures === true)
+      currentDecoder.structures = currentStructures = updatedStructures;
+    else
+      currentStructures.splice.apply(currentStructures, [0, updatedStructures.length].concat(updatedStructures));
+  }
+}
+function saveState(callback) {
+  let savedSrcEnd = srcEnd;
+  let savedPosition = position;
+  let savedStringPosition = stringPosition;
+  let savedSrcStringStart = srcStringStart;
+  let savedSrcStringEnd = srcStringEnd;
+  let savedSrcString = srcString;
+  let savedStrings = strings;
+  let savedReferenceMap = referenceMap;
+  let savedBundledStrings = bundledStrings;
+  let savedSrc = new Uint8Array(src.slice(0, srcEnd));
+  let savedStructures = currentStructures;
+  let savedDecoder = currentDecoder;
+  let savedSequentialMode = sequentialMode;
+  let value = callback();
+  srcEnd = savedSrcEnd;
+  position = savedPosition;
+  stringPosition = savedStringPosition;
+  srcStringStart = savedSrcStringStart;
+  srcStringEnd = savedSrcStringEnd;
+  srcString = savedSrcString;
+  strings = savedStrings;
+  referenceMap = savedReferenceMap;
+  bundledStrings = savedBundledStrings;
+  src = savedSrc;
+  sequentialMode = savedSequentialMode;
+  currentStructures = savedStructures;
+  currentDecoder = savedDecoder;
+  dataView = new DataView(src.buffer, src.byteOffset, src.byteLength);
+  return value;
+}
+function clearSource() {
+  src = null;
+  referenceMap = null;
+  currentStructures = null;
+}
+var mult10 = new Array(147);
+for (let i = 0; i < 256; i++) {
+  mult10[i] = +("1e" + Math.floor(45.15 - i * 0.30103));
+}
+var defaultDecoder = new Decoder({ useRecords: false });
+var decode = defaultDecoder.decode;
+var decodeMultiple = defaultDecoder.decodeMultiple;
+var FLOAT32_OPTIONS = {
+  NEVER: 0,
+  ALWAYS: 1,
+  DECIMAL_ROUND: 3,
+  DECIMAL_FIT: 4
+};
+
+// ../node_modules/.bun/cbor-x@1.6.0/node_modules/cbor-x/encode.js
+var textEncoder;
+try {
+  textEncoder = new TextEncoder();
+} catch (error) {
+}
+var extensions;
+var extensionClasses;
+var Buffer3 = typeof globalThis === "object" && globalThis.Buffer;
+var hasNodeBuffer = typeof Buffer3 !== "undefined";
+var ByteArrayAllocate = hasNodeBuffer ? Buffer3.allocUnsafeSlow : Uint8Array;
+var ByteArray = hasNodeBuffer ? Buffer3 : Uint8Array;
+var MAX_STRUCTURES = 256;
+var MAX_BUFFER_SIZE = hasNodeBuffer ? 4294967296 : 2144337920;
+var throwOnIterable;
+var target;
+var targetView;
+var position2 = 0;
+var safeEnd;
+var bundledStrings2 = null;
+var MAX_BUNDLE_SIZE = 61440;
+var hasNonLatin = /[\u0080-\uFFFF]/;
+var RECORD_SYMBOL = Symbol("record-id");
+var Encoder = class extends Decoder {
+  constructor(options) {
+    super(options);
+    this.offset = 0;
+    let typeBuffer;
+    let start;
+    let sharedStructures;
+    let hasSharedUpdate;
+    let structures;
+    let referenceMap2;
+    options = options || {};
+    let encodeUtf82 = ByteArray.prototype.utf8Write ? function(string, position3, maxBytes) {
+      return target.utf8Write(string, position3, maxBytes);
+    } : textEncoder && textEncoder.encodeInto ? function(string, position3) {
+      return textEncoder.encodeInto(string, target.subarray(position3)).written;
+    } : false;
+    let encoder2 = this;
+    let hasSharedStructures = options.structures || options.saveStructures;
+    let maxSharedStructures = options.maxSharedStructures;
+    if (maxSharedStructures == null)
+      maxSharedStructures = hasSharedStructures ? 128 : 0;
+    if (maxSharedStructures > 8190)
+      throw new Error("Maximum maxSharedStructure is 8190");
+    let isSequential = options.sequential;
+    if (isSequential) {
+      maxSharedStructures = 0;
+    }
+    if (!this.structures)
+      this.structures = [];
+    if (this.saveStructures)
+      this.saveShared = this.saveStructures;
+    let samplingPackedValues, packedObjectMap2, sharedValues = options.sharedValues;
+    let sharedPackedObjectMap2;
+    if (sharedValues) {
+      sharedPackedObjectMap2 = /* @__PURE__ */ Object.create(null);
+      for (let i = 0, l = sharedValues.length; i < l; i++) {
+        sharedPackedObjectMap2[sharedValues[i]] = i;
+      }
+    }
+    let recordIdsToRemove = [];
+    let transitionsCount = 0;
+    let serializationsSinceTransitionRebuild = 0;
+    this.mapEncode = function(value, encodeOptions) {
+      if (this._keyMap && !this._mapped) {
+        switch (value.constructor.name) {
+          case "Array":
+            value = value.map((r) => this.encodeKeys(r));
+            break;
+        }
+      }
+      return this.encode(value, encodeOptions);
+    };
+    this.encode = function(value, encodeOptions) {
+      if (!target) {
+        target = new ByteArrayAllocate(8192);
+        targetView = new DataView(target.buffer, 0, 8192);
+        position2 = 0;
+      }
+      safeEnd = target.length - 10;
+      if (safeEnd - position2 < 2048) {
+        target = new ByteArrayAllocate(target.length);
+        targetView = new DataView(target.buffer, 0, target.length);
+        safeEnd = target.length - 10;
+        position2 = 0;
+      } else if (encodeOptions === REUSE_BUFFER_MODE)
+        position2 = position2 + 7 & 2147483640;
+      start = position2;
+      if (encoder2.useSelfDescribedHeader) {
+        targetView.setUint32(position2, 3654940416);
+        position2 += 3;
+      }
+      referenceMap2 = encoder2.structuredClone ? /* @__PURE__ */ new Map() : null;
+      if (encoder2.bundleStrings && typeof value !== "string") {
+        bundledStrings2 = [];
+        bundledStrings2.size = Infinity;
+      } else
+        bundledStrings2 = null;
+      sharedStructures = encoder2.structures;
+      if (sharedStructures) {
+        if (sharedStructures.uninitialized) {
+          let sharedData = encoder2.getShared() || {};
+          encoder2.structures = sharedStructures = sharedData.structures || [];
+          encoder2.sharedVersion = sharedData.version;
+          let sharedValues2 = encoder2.sharedValues = sharedData.packedValues;
+          if (sharedValues2) {
+            sharedPackedObjectMap2 = {};
+            for (let i = 0, l = sharedValues2.length; i < l; i++)
+              sharedPackedObjectMap2[sharedValues2[i]] = i;
+          }
+        }
+        let sharedStructuresLength = sharedStructures.length;
+        if (sharedStructuresLength > maxSharedStructures && !isSequential)
+          sharedStructuresLength = maxSharedStructures;
+        if (!sharedStructures.transitions) {
+          sharedStructures.transitions = /* @__PURE__ */ Object.create(null);
+          for (let i = 0; i < sharedStructuresLength; i++) {
+            let keys2 = sharedStructures[i];
+            if (!keys2)
+              continue;
+            let nextTransition, transition = sharedStructures.transitions;
+            for (let j = 0, l = keys2.length; j < l; j++) {
+              if (transition[RECORD_SYMBOL] === void 0)
+                transition[RECORD_SYMBOL] = i;
+              let key = keys2[j];
+              nextTransition = transition[key];
+              if (!nextTransition) {
+                nextTransition = transition[key] = /* @__PURE__ */ Object.create(null);
+              }
+              transition = nextTransition;
+            }
+            transition[RECORD_SYMBOL] = i | 1048576;
+          }
+        }
+        if (!isSequential)
+          sharedStructures.nextId = sharedStructuresLength;
+      }
+      if (hasSharedUpdate)
+        hasSharedUpdate = false;
+      structures = sharedStructures || [];
+      packedObjectMap2 = sharedPackedObjectMap2;
+      if (options.pack) {
+        let packedValues2 = /* @__PURE__ */ new Map();
+        packedValues2.values = [];
+        packedValues2.encoder = encoder2;
+        packedValues2.maxValues = options.maxPrivatePackedValues || (sharedPackedObjectMap2 ? 16 : Infinity);
+        packedValues2.objectMap = sharedPackedObjectMap2 || false;
+        packedValues2.samplingPackedValues = samplingPackedValues;
+        findRepetitiveStrings(value, packedValues2);
+        if (packedValues2.values.length > 0) {
+          target[position2++] = 216;
+          target[position2++] = 51;
+          writeArrayHeader(4);
+          let valuesArray = packedValues2.values;
+          encode2(valuesArray);
+          writeArrayHeader(0);
+          writeArrayHeader(0);
+          packedObjectMap2 = Object.create(sharedPackedObjectMap2 || null);
+          for (let i = 0, l = valuesArray.length; i < l; i++) {
+            packedObjectMap2[valuesArray[i]] = i;
+          }
+        }
+      }
+      throwOnIterable = encodeOptions & THROW_ON_ITERABLE;
+      try {
+        if (throwOnIterable)
+          return;
+        encode2(value);
+        if (bundledStrings2) {
+          writeBundles(start, encode2);
+        }
+        encoder2.offset = position2;
+        if (referenceMap2 && referenceMap2.idsToInsert) {
+          position2 += referenceMap2.idsToInsert.length * 2;
+          if (position2 > safeEnd)
+            makeRoom(position2);
+          encoder2.offset = position2;
+          let serialized = insertIds(target.subarray(start, position2), referenceMap2.idsToInsert);
+          referenceMap2 = null;
+          return serialized;
+        }
+        if (encodeOptions & REUSE_BUFFER_MODE) {
+          target.start = start;
+          target.end = position2;
+          return target;
+        }
+        return target.subarray(start, position2);
+      } finally {
+        if (sharedStructures) {
+          if (serializationsSinceTransitionRebuild < 10)
+            serializationsSinceTransitionRebuild++;
+          if (sharedStructures.length > maxSharedStructures)
+            sharedStructures.length = maxSharedStructures;
+          if (transitionsCount > 1e4) {
+            sharedStructures.transitions = null;
+            serializationsSinceTransitionRebuild = 0;
+            transitionsCount = 0;
+            if (recordIdsToRemove.length > 0)
+              recordIdsToRemove = [];
+          } else if (recordIdsToRemove.length > 0 && !isSequential) {
+            for (let i = 0, l = recordIdsToRemove.length; i < l; i++) {
+              recordIdsToRemove[i][RECORD_SYMBOL] = void 0;
+            }
+            recordIdsToRemove = [];
+          }
+        }
+        if (hasSharedUpdate && encoder2.saveShared) {
+          if (encoder2.structures.length > maxSharedStructures) {
+            encoder2.structures = encoder2.structures.slice(0, maxSharedStructures);
+          }
+          let returnBuffer = target.subarray(start, position2);
+          if (encoder2.updateSharedData() === false)
+            return encoder2.encode(value);
+          return returnBuffer;
+        }
+        if (encodeOptions & RESET_BUFFER_MODE)
+          position2 = start;
+      }
+    };
+    this.findCommonStringsToPack = () => {
+      samplingPackedValues = /* @__PURE__ */ new Map();
+      if (!sharedPackedObjectMap2)
+        sharedPackedObjectMap2 = /* @__PURE__ */ Object.create(null);
+      return (options2) => {
+        let threshold = options2 && options2.threshold || 4;
+        let position3 = this.pack ? options2.maxPrivatePackedValues || 16 : 0;
+        if (!sharedValues)
+          sharedValues = this.sharedValues = [];
+        for (let [key, status] of samplingPackedValues) {
+          if (status.count > threshold) {
+            sharedPackedObjectMap2[key] = position3++;
+            sharedValues.push(key);
+            hasSharedUpdate = true;
+          }
+        }
+        while (this.saveShared && this.updateSharedData() === false) {
+        }
+        samplingPackedValues = null;
+      };
+    };
+    const encode2 = (value) => {
+      if (position2 > safeEnd)
+        target = makeRoom(position2);
+      var type = typeof value;
+      var length2;
+      if (type === "string") {
+        if (packedObjectMap2) {
+          let packedPosition = packedObjectMap2[value];
+          if (packedPosition >= 0) {
+            if (packedPosition < 16)
+              target[position2++] = packedPosition + 224;
+            else {
+              target[position2++] = 198;
+              if (packedPosition & 1)
+                encode2(15 - packedPosition >> 1);
+              else
+                encode2(packedPosition - 16 >> 1);
+            }
+            return;
+          } else if (samplingPackedValues && !options.pack) {
+            let status = samplingPackedValues.get(value);
+            if (status)
+              status.count++;
+            else
+              samplingPackedValues.set(value, {
+                count: 1
+              });
+          }
+        }
+        let strLength = value.length;
+        if (bundledStrings2 && strLength >= 4 && strLength < 1024) {
+          if ((bundledStrings2.size += strLength) > MAX_BUNDLE_SIZE) {
+            let extStart;
+            let maxBytes2 = (bundledStrings2[0] ? bundledStrings2[0].length * 3 + bundledStrings2[1].length : 0) + 10;
+            if (position2 + maxBytes2 > safeEnd)
+              target = makeRoom(position2 + maxBytes2);
+            target[position2++] = 217;
+            target[position2++] = 223;
+            target[position2++] = 249;
+            target[position2++] = bundledStrings2.position ? 132 : 130;
+            target[position2++] = 26;
+            extStart = position2 - start;
+            position2 += 4;
+            if (bundledStrings2.position) {
+              writeBundles(start, encode2);
+            }
+            bundledStrings2 = ["", ""];
+            bundledStrings2.size = 0;
+            bundledStrings2.position = extStart;
+          }
+          let twoByte = hasNonLatin.test(value);
+          bundledStrings2[twoByte ? 0 : 1] += value;
+          target[position2++] = twoByte ? 206 : 207;
+          encode2(strLength);
+          return;
+        }
+        let headerSize;
+        if (strLength < 32) {
+          headerSize = 1;
+        } else if (strLength < 256) {
+          headerSize = 2;
+        } else if (strLength < 65536) {
+          headerSize = 3;
+        } else {
+          headerSize = 5;
+        }
+        let maxBytes = strLength * 3;
+        if (position2 + maxBytes > safeEnd)
+          target = makeRoom(position2 + maxBytes);
+        if (strLength < 64 || !encodeUtf82) {
+          let i, c1, c2, strPosition = position2 + headerSize;
+          for (i = 0; i < strLength; i++) {
+            c1 = value.charCodeAt(i);
+            if (c1 < 128) {
+              target[strPosition++] = c1;
+            } else if (c1 < 2048) {
+              target[strPosition++] = c1 >> 6 | 192;
+              target[strPosition++] = c1 & 63 | 128;
+            } else if ((c1 & 64512) === 55296 && ((c2 = value.charCodeAt(i + 1)) & 64512) === 56320) {
+              c1 = 65536 + ((c1 & 1023) << 10) + (c2 & 1023);
+              i++;
+              target[strPosition++] = c1 >> 18 | 240;
+              target[strPosition++] = c1 >> 12 & 63 | 128;
+              target[strPosition++] = c1 >> 6 & 63 | 128;
+              target[strPosition++] = c1 & 63 | 128;
+            } else {
+              target[strPosition++] = c1 >> 12 | 224;
+              target[strPosition++] = c1 >> 6 & 63 | 128;
+              target[strPosition++] = c1 & 63 | 128;
+            }
+          }
+          length2 = strPosition - position2 - headerSize;
+        } else {
+          length2 = encodeUtf82(value, position2 + headerSize, maxBytes);
+        }
+        if (length2 < 24) {
+          target[position2++] = 96 | length2;
+        } else if (length2 < 256) {
+          if (headerSize < 2) {
+            target.copyWithin(position2 + 2, position2 + 1, position2 + 1 + length2);
+          }
+          target[position2++] = 120;
+          target[position2++] = length2;
+        } else if (length2 < 65536) {
+          if (headerSize < 3) {
+            target.copyWithin(position2 + 3, position2 + 2, position2 + 2 + length2);
+          }
+          target[position2++] = 121;
+          target[position2++] = length2 >> 8;
+          target[position2++] = length2 & 255;
+        } else {
+          if (headerSize < 5) {
+            target.copyWithin(position2 + 5, position2 + 3, position2 + 3 + length2);
+          }
+          target[position2++] = 122;
+          targetView.setUint32(position2, length2);
+          position2 += 4;
+        }
+        position2 += length2;
+      } else if (type === "number") {
+        if (!this.alwaysUseFloat && value >>> 0 === value) {
+          if (value < 24) {
+            target[position2++] = value;
+          } else if (value < 256) {
+            target[position2++] = 24;
+            target[position2++] = value;
+          } else if (value < 65536) {
+            target[position2++] = 25;
+            target[position2++] = value >> 8;
+            target[position2++] = value & 255;
+          } else {
+            target[position2++] = 26;
+            targetView.setUint32(position2, value);
+            position2 += 4;
+          }
+        } else if (!this.alwaysUseFloat && value >> 0 === value) {
+          if (value >= -24) {
+            target[position2++] = 31 - value;
+          } else if (value >= -256) {
+            target[position2++] = 56;
+            target[position2++] = ~value;
+          } else if (value >= -65536) {
+            target[position2++] = 57;
+            targetView.setUint16(position2, ~value);
+            position2 += 2;
+          } else {
+            target[position2++] = 58;
+            targetView.setUint32(position2, ~value);
+            position2 += 4;
+          }
+        } else {
+          let useFloat32;
+          if ((useFloat32 = this.useFloat32) > 0 && value < 4294967296 && value >= -2147483648) {
+            target[position2++] = 250;
+            targetView.setFloat32(position2, value);
+            let xShifted;
+            if (useFloat32 < 4 || // this checks for rounding of numbers that were encoded in 32-bit float to nearest significant decimal digit that could be preserved
+            (xShifted = value * mult10[(target[position2] & 127) << 1 | target[position2 + 1] >> 7]) >> 0 === xShifted) {
+              position2 += 4;
+              return;
+            } else
+              position2--;
+          }
+          target[position2++] = 251;
+          targetView.setFloat64(position2, value);
+          position2 += 8;
+        }
+      } else if (type === "object") {
+        if (!value)
+          target[position2++] = 246;
+        else {
+          if (referenceMap2) {
+            let referee = referenceMap2.get(value);
+            if (referee) {
+              target[position2++] = 216;
+              target[position2++] = 29;
+              target[position2++] = 25;
+              if (!referee.references) {
+                let idsToInsert = referenceMap2.idsToInsert || (referenceMap2.idsToInsert = []);
+                referee.references = [];
+                idsToInsert.push(referee);
+              }
+              referee.references.push(position2 - start);
+              position2 += 2;
+              return;
+            } else
+              referenceMap2.set(value, { offset: position2 - start });
+          }
+          let constructor = value.constructor;
+          if (constructor === Object) {
+            writeObject(value);
+          } else if (constructor === Array) {
+            length2 = value.length;
+            if (length2 < 24) {
+              target[position2++] = 128 | length2;
+            } else {
+              writeArrayHeader(length2);
+            }
+            for (let i = 0; i < length2; i++) {
+              encode2(value[i]);
+            }
+          } else if (constructor === Map) {
+            if (this.mapsAsObjects ? this.useTag259ForMaps !== false : this.useTag259ForMaps) {
+              target[position2++] = 217;
+              target[position2++] = 1;
+              target[position2++] = 3;
+            }
+            length2 = value.size;
+            if (length2 < 24) {
+              target[position2++] = 160 | length2;
+            } else if (length2 < 256) {
+              target[position2++] = 184;
+              target[position2++] = length2;
+            } else if (length2 < 65536) {
+              target[position2++] = 185;
+              target[position2++] = length2 >> 8;
+              target[position2++] = length2 & 255;
+            } else {
+              target[position2++] = 186;
+              targetView.setUint32(position2, length2);
+              position2 += 4;
+            }
+            if (encoder2.keyMap) {
+              for (let [key, entryValue] of value) {
+                encode2(encoder2.encodeKey(key));
+                encode2(entryValue);
+              }
+            } else {
+              for (let [key, entryValue] of value) {
+                encode2(key);
+                encode2(entryValue);
+              }
+            }
+          } else {
+            for (let i = 0, l = extensions.length; i < l; i++) {
+              let extensionClass = extensionClasses[i];
+              if (value instanceof extensionClass) {
+                let extension = extensions[i];
+                let tag = extension.tag;
+                if (tag == void 0)
+                  tag = extension.getTag && extension.getTag.call(this, value);
+                if (tag < 24) {
+                  target[position2++] = 192 | tag;
+                } else if (tag < 256) {
+                  target[position2++] = 216;
+                  target[position2++] = tag;
+                } else if (tag < 65536) {
+                  target[position2++] = 217;
+                  target[position2++] = tag >> 8;
+                  target[position2++] = tag & 255;
+                } else if (tag > -1) {
+                  target[position2++] = 218;
+                  targetView.setUint32(position2, tag);
+                  position2 += 4;
+                }
+                extension.encode.call(this, value, encode2, makeRoom);
+                return;
+              }
+            }
+            if (value[Symbol.iterator]) {
+              if (throwOnIterable) {
+                let error = new Error("Iterable should be serialized as iterator");
+                error.iteratorNotHandled = true;
+                throw error;
+              }
+              target[position2++] = 159;
+              for (let entry of value) {
+                encode2(entry);
+              }
+              target[position2++] = 255;
+              return;
+            }
+            if (value[Symbol.asyncIterator] || isBlob(value)) {
+              let error = new Error("Iterable/blob should be serialized as iterator");
+              error.iteratorNotHandled = true;
+              throw error;
+            }
+            if (this.useToJSON && value.toJSON) {
+              const json = value.toJSON();
+              if (json !== value)
+                return encode2(json);
+            }
+            writeObject(value);
+          }
+        }
+      } else if (type === "boolean") {
+        target[position2++] = value ? 245 : 244;
+      } else if (type === "bigint") {
+        if (value < BigInt(1) << BigInt(64) && value >= 0) {
+          target[position2++] = 27;
+          targetView.setBigUint64(position2, value);
+        } else if (value > -(BigInt(1) << BigInt(64)) && value < 0) {
+          target[position2++] = 59;
+          targetView.setBigUint64(position2, -value - BigInt(1));
+        } else {
+          if (this.largeBigIntToFloat) {
+            target[position2++] = 251;
+            targetView.setFloat64(position2, Number(value));
+          } else {
+            if (value >= BigInt(0))
+              target[position2++] = 194;
+            else {
+              target[position2++] = 195;
+              value = BigInt(-1) - value;
+            }
+            let bytes = [];
+            while (value) {
+              bytes.push(Number(value & BigInt(255)));
+              value >>= BigInt(8);
+            }
+            writeBuffer(new Uint8Array(bytes.reverse()), makeRoom);
+            return;
+          }
+        }
+        position2 += 8;
+      } else if (type === "undefined") {
+        target[position2++] = 247;
+      } else {
+        throw new Error("Unknown type: " + type);
+      }
+    };
+    const writeObject = this.useRecords === false ? this.variableMapSize ? (object) => {
+      let keys2 = Object.keys(object);
+      let vals = Object.values(object);
+      let length2 = keys2.length;
+      if (length2 < 24) {
+        target[position2++] = 160 | length2;
+      } else if (length2 < 256) {
+        target[position2++] = 184;
+        target[position2++] = length2;
+      } else if (length2 < 65536) {
+        target[position2++] = 185;
+        target[position2++] = length2 >> 8;
+        target[position2++] = length2 & 255;
+      } else {
+        target[position2++] = 186;
+        targetView.setUint32(position2, length2);
+        position2 += 4;
+      }
+      let key;
+      if (encoder2.keyMap) {
+        for (let i = 0; i < length2; i++) {
+          encode2(encoder2.encodeKey(keys2[i]));
+          encode2(vals[i]);
+        }
+      } else {
+        for (let i = 0; i < length2; i++) {
+          encode2(keys2[i]);
+          encode2(vals[i]);
+        }
+      }
+    } : (object) => {
+      target[position2++] = 185;
+      let objectOffset = position2 - start;
+      position2 += 2;
+      let size2 = 0;
+      if (encoder2.keyMap) {
+        for (let key in object)
+          if (typeof object.hasOwnProperty !== "function" || object.hasOwnProperty(key)) {
+            encode2(encoder2.encodeKey(key));
+            encode2(object[key]);
+            size2++;
+          }
+      } else {
+        for (let key in object)
+          if (typeof object.hasOwnProperty !== "function" || object.hasOwnProperty(key)) {
+            encode2(key);
+            encode2(object[key]);
+            size2++;
+          }
+      }
+      target[objectOffset++ + start] = size2 >> 8;
+      target[objectOffset + start] = size2 & 255;
+    } : (object, skipValues) => {
+      let nextTransition, transition = structures.transitions || (structures.transitions = /* @__PURE__ */ Object.create(null));
+      let newTransitions = 0;
+      let length2 = 0;
+      let parentRecordId;
+      let keys2;
+      if (this.keyMap) {
+        keys2 = Object.keys(object).map((k) => this.encodeKey(k));
+        length2 = keys2.length;
+        for (let i = 0; i < length2; i++) {
+          let key = keys2[i];
+          nextTransition = transition[key];
+          if (!nextTransition) {
+            nextTransition = transition[key] = /* @__PURE__ */ Object.create(null);
+            newTransitions++;
+          }
+          transition = nextTransition;
+        }
+      } else {
+        for (let key in object)
+          if (typeof object.hasOwnProperty !== "function" || object.hasOwnProperty(key)) {
+            nextTransition = transition[key];
+            if (!nextTransition) {
+              if (transition[RECORD_SYMBOL] & 1048576) {
+                parentRecordId = transition[RECORD_SYMBOL] & 65535;
+              }
+              nextTransition = transition[key] = /* @__PURE__ */ Object.create(null);
+              newTransitions++;
+            }
+            transition = nextTransition;
+            length2++;
+          }
+      }
+      let recordId = transition[RECORD_SYMBOL];
+      if (recordId !== void 0) {
+        recordId &= 65535;
+        target[position2++] = 217;
+        target[position2++] = recordId >> 8 | 224;
+        target[position2++] = recordId & 255;
+      } else {
+        if (!keys2)
+          keys2 = transition.__keys__ || (transition.__keys__ = Object.keys(object));
+        if (parentRecordId === void 0) {
+          recordId = structures.nextId++;
+          if (!recordId) {
+            recordId = 0;
+            structures.nextId = 1;
+          }
+          if (recordId >= MAX_STRUCTURES) {
+            structures.nextId = (recordId = maxSharedStructures) + 1;
+          }
+        } else {
+          recordId = parentRecordId;
+        }
+        structures[recordId] = keys2;
+        if (recordId < maxSharedStructures) {
+          target[position2++] = 217;
+          target[position2++] = recordId >> 8 | 224;
+          target[position2++] = recordId & 255;
+          transition = structures.transitions;
+          for (let i = 0; i < length2; i++) {
+            if (transition[RECORD_SYMBOL] === void 0 || transition[RECORD_SYMBOL] & 1048576)
+              transition[RECORD_SYMBOL] = recordId;
+            transition = transition[keys2[i]];
+          }
+          transition[RECORD_SYMBOL] = recordId | 1048576;
+          hasSharedUpdate = true;
+        } else {
+          transition[RECORD_SYMBOL] = recordId;
+          targetView.setUint32(position2, 3655335680);
+          position2 += 3;
+          if (newTransitions)
+            transitionsCount += serializationsSinceTransitionRebuild * newTransitions;
+          if (recordIdsToRemove.length >= MAX_STRUCTURES - maxSharedStructures)
+            recordIdsToRemove.shift()[RECORD_SYMBOL] = void 0;
+          recordIdsToRemove.push(transition);
+          writeArrayHeader(length2 + 2);
+          encode2(57344 + recordId);
+          encode2(keys2);
+          if (skipValues)
+            return;
+          for (let key in object)
+            if (typeof object.hasOwnProperty !== "function" || object.hasOwnProperty(key))
+              encode2(object[key]);
+          return;
+        }
+      }
+      if (length2 < 24) {
+        target[position2++] = 128 | length2;
+      } else {
+        writeArrayHeader(length2);
+      }
+      if (skipValues)
+        return;
+      for (let key in object)
+        if (typeof object.hasOwnProperty !== "function" || object.hasOwnProperty(key))
+          encode2(object[key]);
+    };
+    const makeRoom = (end) => {
+      let newSize;
+      if (end > 16777216) {
+        if (end - start > MAX_BUFFER_SIZE)
+          throw new Error("Encoded buffer would be larger than maximum buffer size");
+        newSize = Math.min(
+          MAX_BUFFER_SIZE,
+          Math.round(Math.max((end - start) * (end > 67108864 ? 1.25 : 2), 4194304) / 4096) * 4096
+        );
+      } else
+        newSize = (Math.max(end - start << 2, target.length - 1) >> 12) + 1 << 12;
+      let newBuffer = new ByteArrayAllocate(newSize);
+      targetView = new DataView(newBuffer.buffer, 0, newSize);
+      if (target.copy)
+        target.copy(newBuffer, 0, start, end);
+      else
+        newBuffer.set(target.slice(start, end));
+      position2 -= start;
+      start = 0;
+      safeEnd = newBuffer.length - 10;
+      return target = newBuffer;
+    };
+    let chunkThreshold = 100;
+    let continuedChunkThreshold = 1e3;
+    this.encodeAsIterable = function(value, options2) {
+      return startEncoding(value, options2, encodeObjectAsIterable);
+    };
+    this.encodeAsAsyncIterable = function(value, options2) {
+      return startEncoding(value, options2, encodeObjectAsAsyncIterable);
+    };
+    function* encodeObjectAsIterable(object, iterateProperties, finalIterable) {
+      let constructor = object.constructor;
+      if (constructor === Object) {
+        let useRecords = encoder2.useRecords !== false;
+        if (useRecords)
+          writeObject(object, true);
+        else
+          writeEntityLength(Object.keys(object).length, 160);
+        for (let key in object) {
+          let value = object[key];
+          if (!useRecords)
+            encode2(key);
+          if (value && typeof value === "object") {
+            if (iterateProperties[key])
+              yield* encodeObjectAsIterable(value, iterateProperties[key]);
+            else
+              yield* tryEncode(value, iterateProperties, key);
+          } else
+            encode2(value);
+        }
+      } else if (constructor === Array) {
+        let length2 = object.length;
+        writeArrayHeader(length2);
+        for (let i = 0; i < length2; i++) {
+          let value = object[i];
+          if (value && (typeof value === "object" || position2 - start > chunkThreshold)) {
+            if (iterateProperties.element)
+              yield* encodeObjectAsIterable(value, iterateProperties.element);
+            else
+              yield* tryEncode(value, iterateProperties, "element");
+          } else
+            encode2(value);
+        }
+      } else if (object[Symbol.iterator] && !object.buffer) {
+        target[position2++] = 159;
+        for (let value of object) {
+          if (value && (typeof value === "object" || position2 - start > chunkThreshold)) {
+            if (iterateProperties.element)
+              yield* encodeObjectAsIterable(value, iterateProperties.element);
+            else
+              yield* tryEncode(value, iterateProperties, "element");
+          } else
+            encode2(value);
+        }
+        target[position2++] = 255;
+      } else if (isBlob(object)) {
+        writeEntityLength(object.size, 64);
+        yield target.subarray(start, position2);
+        yield object;
+        restartEncoding();
+      } else if (object[Symbol.asyncIterator]) {
+        target[position2++] = 159;
+        yield target.subarray(start, position2);
+        yield object;
+        restartEncoding();
+        target[position2++] = 255;
+      } else {
+        encode2(object);
+      }
+      if (finalIterable && position2 > start)
+        yield target.subarray(start, position2);
+      else if (position2 - start > chunkThreshold) {
+        yield target.subarray(start, position2);
+        restartEncoding();
+      }
+    }
+    function* tryEncode(value, iterateProperties, key) {
+      let restart = position2 - start;
+      try {
+        encode2(value);
+        if (position2 - start > chunkThreshold) {
+          yield target.subarray(start, position2);
+          restartEncoding();
+        }
+      } catch (error) {
+        if (error.iteratorNotHandled) {
+          iterateProperties[key] = {};
+          position2 = start + restart;
+          yield* encodeObjectAsIterable.call(this, value, iterateProperties[key]);
+        } else
+          throw error;
+      }
+    }
+    function restartEncoding() {
+      chunkThreshold = continuedChunkThreshold;
+      encoder2.encode(null, THROW_ON_ITERABLE);
+    }
+    function startEncoding(value, options2, encodeIterable) {
+      if (options2 && options2.chunkThreshold)
+        chunkThreshold = continuedChunkThreshold = options2.chunkThreshold;
+      else
+        chunkThreshold = 100;
+      if (value && typeof value === "object") {
+        encoder2.encode(null, THROW_ON_ITERABLE);
+        return encodeIterable(value, encoder2.iterateProperties || (encoder2.iterateProperties = {}), true);
+      }
+      return [encoder2.encode(value)];
+    }
+    async function* encodeObjectAsAsyncIterable(value, iterateProperties) {
+      for (let encodedValue of encodeObjectAsIterable(value, iterateProperties, true)) {
+        let constructor = encodedValue.constructor;
+        if (constructor === ByteArray || constructor === Uint8Array)
+          yield encodedValue;
+        else if (isBlob(encodedValue)) {
+          let reader = encodedValue.stream().getReader();
+          let next;
+          while (!(next = await reader.read()).done) {
+            yield next.value;
+          }
+        } else if (encodedValue[Symbol.asyncIterator]) {
+          for await (let asyncValue of encodedValue) {
+            restartEncoding();
+            if (asyncValue)
+              yield* encodeObjectAsAsyncIterable(asyncValue, iterateProperties.async || (iterateProperties.async = {}));
+            else
+              yield encoder2.encode(asyncValue);
+          }
+        } else {
+          yield encodedValue;
+        }
+      }
+    }
+  }
+  useBuffer(buffer) {
+    target = buffer;
+    targetView = new DataView(target.buffer, target.byteOffset, target.byteLength);
+    position2 = 0;
+  }
+  clearSharedData() {
+    if (this.structures)
+      this.structures = [];
+    if (this.sharedValues)
+      this.sharedValues = void 0;
+  }
+  updateSharedData() {
+    let lastVersion = this.sharedVersion || 0;
+    this.sharedVersion = lastVersion + 1;
+    let structuresCopy = this.structures.slice(0);
+    let sharedData = new SharedData(structuresCopy, this.sharedValues, this.sharedVersion);
+    let saveResults = this.saveShared(
+      sharedData,
+      (existingShared) => (existingShared && existingShared.version || 0) == lastVersion
+    );
+    if (saveResults === false) {
+      sharedData = this.getShared() || {};
+      this.structures = sharedData.structures || [];
+      this.sharedValues = sharedData.packedValues;
+      this.sharedVersion = sharedData.version;
+      this.structures.nextId = this.structures.length;
+    } else {
+      structuresCopy.forEach((structure, i) => this.structures[i] = structure);
+    }
+    return saveResults;
+  }
+};
+function writeEntityLength(length2, majorValue) {
+  if (length2 < 24)
+    target[position2++] = majorValue | length2;
+  else if (length2 < 256) {
+    target[position2++] = majorValue | 24;
+    target[position2++] = length2;
+  } else if (length2 < 65536) {
+    target[position2++] = majorValue | 25;
+    target[position2++] = length2 >> 8;
+    target[position2++] = length2 & 255;
+  } else {
+    target[position2++] = majorValue | 26;
+    targetView.setUint32(position2, length2);
+    position2 += 4;
+  }
+}
+var SharedData = class {
+  constructor(structures, values, version) {
+    this.structures = structures;
+    this.packedValues = values;
+    this.version = version;
+  }
+};
+function writeArrayHeader(length2) {
+  if (length2 < 24)
+    target[position2++] = 128 | length2;
+  else if (length2 < 256) {
+    target[position2++] = 152;
+    target[position2++] = length2;
+  } else if (length2 < 65536) {
+    target[position2++] = 153;
+    target[position2++] = length2 >> 8;
+    target[position2++] = length2 & 255;
+  } else {
+    target[position2++] = 154;
+    targetView.setUint32(position2, length2);
+    position2 += 4;
+  }
+}
+var BlobConstructor = typeof Blob === "undefined" ? function() {
+} : Blob;
+function isBlob(object) {
+  if (object instanceof BlobConstructor)
+    return true;
+  let tag = object[Symbol.toStringTag];
+  return tag === "Blob" || tag === "File";
+}
+function findRepetitiveStrings(value, packedValues2) {
+  switch (typeof value) {
+    case "string":
+      if (value.length > 3) {
+        if (packedValues2.objectMap[value] > -1 || packedValues2.values.length >= packedValues2.maxValues)
+          return;
+        let packedStatus = packedValues2.get(value);
+        if (packedStatus) {
+          if (++packedStatus.count == 2) {
+            packedValues2.values.push(value);
+          }
+        } else {
+          packedValues2.set(value, {
+            count: 1
+          });
+          if (packedValues2.samplingPackedValues) {
+            let status = packedValues2.samplingPackedValues.get(value);
+            if (status)
+              status.count++;
+            else
+              packedValues2.samplingPackedValues.set(value, {
+                count: 1
+              });
+          }
+        }
+      }
+      break;
+    case "object":
+      if (value) {
+        if (value instanceof Array) {
+          for (let i = 0, l = value.length; i < l; i++) {
+            findRepetitiveStrings(value[i], packedValues2);
+          }
+        } else {
+          let includeKeys = !packedValues2.encoder.useRecords;
+          for (var key in value) {
+            if (value.hasOwnProperty(key)) {
+              if (includeKeys)
+                findRepetitiveStrings(key, packedValues2);
+              findRepetitiveStrings(value[key], packedValues2);
+            }
+          }
+        }
+      }
+      break;
+    case "function":
+      console.log(value);
+  }
+}
+var isLittleEndianMachine2 = new Uint8Array(new Uint16Array([1]).buffer)[0] == 1;
+extensionClasses = [
+  Date,
+  Set,
+  Error,
+  RegExp,
+  Tag,
+  ArrayBuffer,
+  Uint8Array,
+  Uint8ClampedArray,
+  Uint16Array,
+  Uint32Array,
+  typeof BigUint64Array == "undefined" ? function() {
+  } : BigUint64Array,
+  Int8Array,
+  Int16Array,
+  Int32Array,
+  typeof BigInt64Array == "undefined" ? function() {
+  } : BigInt64Array,
+  Float32Array,
+  Float64Array,
+  SharedData
+];
+extensions = [
+  {
+    // Date
+    tag: 1,
+    encode(date, encode2) {
+      let seconds = date.getTime() / 1e3;
+      if ((this.useTimestamp32 || date.getMilliseconds() === 0) && seconds >= 0 && seconds < 4294967296) {
+        target[position2++] = 26;
+        targetView.setUint32(position2, seconds);
+        position2 += 4;
+      } else {
+        target[position2++] = 251;
+        targetView.setFloat64(position2, seconds);
+        position2 += 8;
+      }
+    }
+  },
+  {
+    // Set
+    tag: 258,
+    // https://github.com/input-output-hk/cbor-sets-spec/blob/master/CBOR_SETS.md
+    encode(set, encode2) {
+      let array = Array.from(set);
+      encode2(array);
+    }
+  },
+  {
+    // Error
+    tag: 27,
+    // http://cbor.schmorp.de/generic-object
+    encode(error, encode2) {
+      encode2([error.name, error.message]);
+    }
+  },
+  {
+    // RegExp
+    tag: 27,
+    // http://cbor.schmorp.de/generic-object
+    encode(regex, encode2) {
+      encode2(["RegExp", regex.source, regex.flags]);
+    }
+  },
+  {
+    // Tag
+    getTag(tag) {
+      return tag.tag;
+    },
+    encode(tag, encode2) {
+      encode2(tag.value);
+    }
+  },
+  {
+    // ArrayBuffer
+    encode(arrayBuffer, encode2, makeRoom) {
+      writeBuffer(arrayBuffer, makeRoom);
+    }
+  },
+  {
+    // Uint8Array
+    getTag(typedArray) {
+      if (typedArray.constructor === Uint8Array) {
+        if (this.tagUint8Array || hasNodeBuffer && this.tagUint8Array !== false)
+          return 64;
+      }
+    },
+    encode(typedArray, encode2, makeRoom) {
+      writeBuffer(typedArray, makeRoom);
+    }
+  },
+  typedArrayEncoder(68, 1),
+  typedArrayEncoder(69, 2),
+  typedArrayEncoder(70, 4),
+  typedArrayEncoder(71, 8),
+  typedArrayEncoder(72, 1),
+  typedArrayEncoder(77, 2),
+  typedArrayEncoder(78, 4),
+  typedArrayEncoder(79, 8),
+  typedArrayEncoder(85, 4),
+  typedArrayEncoder(86, 8),
+  {
+    encode(sharedData, encode2) {
+      let packedValues2 = sharedData.packedValues || [];
+      let sharedStructures = sharedData.structures || [];
+      if (packedValues2.values.length > 0) {
+        target[position2++] = 216;
+        target[position2++] = 51;
+        writeArrayHeader(4);
+        let valuesArray = packedValues2.values;
+        encode2(valuesArray);
+        writeArrayHeader(0);
+        writeArrayHeader(0);
+        packedObjectMap = Object.create(sharedPackedObjectMap || null);
+        for (let i = 0, l = valuesArray.length; i < l; i++) {
+          packedObjectMap[valuesArray[i]] = i;
+        }
+      }
+      if (sharedStructures) {
+        targetView.setUint32(position2, 3655335424);
+        position2 += 3;
+        let definitions = sharedStructures.slice(0);
+        definitions.unshift(57344);
+        definitions.push(new Tag(sharedData.version, 1399353956));
+        encode2(definitions);
+      } else
+        encode2(new Tag(sharedData.version, 1399353956));
+    }
+  }
+];
+function typedArrayEncoder(tag, size2) {
+  if (!isLittleEndianMachine2 && size2 > 1)
+    tag -= 4;
+  return {
+    tag,
+    encode: function writeExtBuffer(typedArray, encode2) {
+      let length2 = typedArray.byteLength;
+      let offset = typedArray.byteOffset || 0;
+      let buffer = typedArray.buffer || typedArray;
+      encode2(hasNodeBuffer ? Buffer3.from(buffer, offset, length2) : new Uint8Array(buffer, offset, length2));
+    }
+  };
+}
+function writeBuffer(buffer, makeRoom) {
+  let length2 = buffer.byteLength;
+  if (length2 < 24) {
+    target[position2++] = 64 + length2;
+  } else if (length2 < 256) {
+    target[position2++] = 88;
+    target[position2++] = length2;
+  } else if (length2 < 65536) {
+    target[position2++] = 89;
+    target[position2++] = length2 >> 8;
+    target[position2++] = length2 & 255;
+  } else {
+    target[position2++] = 90;
+    targetView.setUint32(position2, length2);
+    position2 += 4;
+  }
+  if (position2 + length2 >= target.length) {
+    makeRoom(position2 + length2);
+  }
+  target.set(buffer.buffer ? buffer : new Uint8Array(buffer), position2);
+  position2 += length2;
+}
+function insertIds(serialized, idsToInsert) {
+  let nextId;
+  let distanceToMove = idsToInsert.length * 2;
+  let lastEnd = serialized.length - distanceToMove;
+  idsToInsert.sort((a, b) => a.offset > b.offset ? 1 : -1);
+  for (let id2 = 0; id2 < idsToInsert.length; id2++) {
+    let referee = idsToInsert[id2];
+    referee.id = id2;
+    for (let position3 of referee.references) {
+      serialized[position3++] = id2 >> 8;
+      serialized[position3] = id2 & 255;
+    }
+  }
+  while (nextId = idsToInsert.pop()) {
+    let offset = nextId.offset;
+    serialized.copyWithin(offset + distanceToMove, offset, lastEnd);
+    distanceToMove -= 2;
+    let position3 = offset + distanceToMove;
+    serialized[position3++] = 216;
+    serialized[position3++] = 28;
+    lastEnd = offset;
+  }
+  return serialized;
+}
+function writeBundles(start, encode2) {
+  targetView.setUint32(bundledStrings2.position + start, position2 - bundledStrings2.position - start + 1);
+  let writeStrings = bundledStrings2;
+  bundledStrings2 = null;
+  encode2(writeStrings[0]);
+  encode2(writeStrings[1]);
+}
+var defaultEncoder = new Encoder({ useRecords: false });
+var encode = defaultEncoder.encode;
+var encodeAsIterable = defaultEncoder.encodeAsIterable;
+var encodeAsAsyncIterable = defaultEncoder.encodeAsAsyncIterable;
+var { NEVER: NEVER2, ALWAYS, DECIMAL_ROUND, DECIMAL_FIT } = FLOAT32_OPTIONS;
+var REUSE_BUFFER_MODE = 512;
+var RESET_BUFFER_MODE = 1024;
+var THROW_ON_ITERABLE = 2048;
+
+// ../shared/src/protocol/codec.ts
+var encoder = new Encoder({
+  useRecords: false,
+  structuredClone: true
+});
+function encodeMessage(message) {
+  ProtocolMessageSchema.parse(message);
+  return encoder.encode(message);
+}
+function decodeMessage(data) {
+  const decoded = encoder.decode(data);
+  return ProtocolMessageSchema.parse(decoded);
+}
+function parseBinaryMessage(data) {
+  try {
+    if (typeof data === "string")
+      return null;
+    const buffer = data instanceof Uint8Array ? data : new Uint8Array(data);
+    return decodeMessage(buffer);
+  } catch (err) {
+    console.error("[Codec] Failed to decode binary message:", err);
+    return null;
+  }
+}
+function serializeMessage(message) {
+  return encodeMessage(message);
+}
+
+// ../shared/src/utils/index.ts
+function classifyFile(path2) {
+  var _a;
+  const extension = (_a = path2.split(".").pop()) == null ? void 0 : _a.toLowerCase();
+  switch (extension) {
+    case "md":
+      return { type: "markdown" };
+    case "canvas":
+      return { type: "canvas" };
+    case "json":
+      return { type: "json" };
+    case "png":
+    case "jpg":
+    case "jpeg":
+    case "gif":
+    case "svg":
+    case "webp":
+      return { type: "binary", kind: "image" };
+    case "pdf":
+      return { type: "binary", kind: "pdf" };
+    default:
+      return { type: "binary", kind: "other" };
+  }
+}
+function hashContent(content) {
+  let hash = 0;
+  for (let i = 0; i < content.length; i++) {
+    const char = content.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash |= 0;
+  }
+  return hash.toString(36);
+}
 
 // src/utils/git-utils.ts
 var git = __toESM(require_isomorphic_git(), 1);
@@ -31958,8 +38492,17 @@ function createVaultFs(adapter) {
   const fs = {
     readFile: async (path2, options) => {
       try {
-        const data = await adapter.readBinary(normalizePath(path2));
-        return new Uint8Array(data);
+        const normalized = normalizePath(path2);
+        const encoding = typeof options === "string" ? options : options == null ? void 0 : options.encoding;
+        if (encoding === "utf8" || encoding === "utf-8") {
+          return await adapter.read(normalized);
+        }
+        const data = await adapter.readBinary(normalized);
+        const uint8 = new Uint8Array(data);
+        if (encoding) {
+          return new TextDecoder(encoding).decode(uint8);
+        }
+        return uint8;
       } catch (e) {
         throw { code: "ENOENT", message: "File not found" };
       }
@@ -32069,7 +38612,11 @@ var GitUtils = class {
     const fs = createVaultFs(app.vault.adapter);
     try {
       for (const file of files) {
-        await git.add({ fs, dir: ".", filepath: file });
+        if (await app.vault.adapter.exists(file)) {
+          await git.add({ fs, dir: ".", filepath: file });
+        } else {
+          await git.remove({ fs, dir: ".", filepath: file });
+        }
       }
       const sha = await git.commit({
         fs,
@@ -32084,7 +38631,7 @@ var GitUtils = class {
       return null;
     }
   }
-  static async fetchAndMerge(app, remoteUrl, branch, crdtManager, isEditable) {
+  static async fetchAndMerge(app, remoteUrl, branch, crdtManager, isEditable, isFileOpen) {
     const fs = createVaultFs(app.vault.adapter);
     const dir = ".";
     try {
@@ -32115,7 +38662,17 @@ var GitUtils = class {
           continue;
         const { filepath, fetchOid } = change;
         if (!fetchOid) {
+          if (isEditable(filepath)) {
+            const doc2 = await crdtManager.getDoc(filepath);
+            const hasContent2 = doc2.getText("content").length > 0 || doc2.getMap("data").size > 0;
+            if (hasContent2 || isFileOpen(filepath)) {
+              console.log(`[VaultSync/Git] Edit-Wins-Over-Delete: Restoring ${filepath} from CRDT/Editor`);
+              await crdtManager.materializeToFile(filepath, doc2);
+              continue;
+            }
+          }
           await app.vault.adapter.remove(filepath);
+          console.log(`[VaultSync/Git] Propagated remote deletion: ${filepath}`);
           continue;
         }
         if (isEditable(filepath)) {
@@ -32124,6 +38681,10 @@ var GitUtils = class {
           console.log(`[VaultSync/Git] Merging remote Git content for ${filepath}`);
           await crdtManager.updateCrdtFromFile(filepath, content);
         } else {
+          if (isFileOpen(filepath)) {
+            console.warn(`[VaultSync/Git] Skipping binary overwrite for open file: ${filepath}`);
+            continue;
+          }
           const { blob } = await git.readBlob({ fs, dir, oid: fetchOid });
           await app.vault.adapter.writeBinary(filepath, blob.buffer);
           console.log(`[VaultSync/Git] Updated binary file from remote: ${filepath}`);
@@ -32142,22 +38703,15 @@ var GitUtils = class {
   }
   static async push(app, remoteUrl, branch) {
     const fs = createVaultFs(app.vault.adapter);
-    try {
-      await git.push({
-        fs,
-        http: web_default,
-        dir: ".",
-        remote: "origin",
-        ref: branch
-        // Authentication should be handled via settings in a real app
-        // For now we assume no auth or standard env vars
-      });
-      console.log("[VaultSync/Git] Pushed changes to remote");
-      return true;
-    } catch (e) {
-      console.error("[VaultSync/Git] Failed to push changes", e);
-      return false;
-    }
+    await git.push({
+      fs,
+      http: web_default,
+      dir: ".",
+      remote: "origin",
+      ref: branch
+    });
+    console.log("[VaultSync/Git] Pushed changes to remote");
+    return true;
   }
   static async detectRemoteUrl(app) {
     try {
@@ -32210,7 +38764,19 @@ ${END_MARKER}
   }
 };
 
+// src/utils/debounce.ts
+function debounce(func, wait) {
+  let timeout = null;
+  return function(...args2) {
+    const context = this;
+    if (timeout)
+      clearTimeout(timeout);
+    timeout = setTimeout(() => func.apply(context, args2), wait);
+  };
+}
+
 // src/sync/orchestrator.ts
+var import_obsidian4 = require("obsidian");
 var SyncOrchestrator = class {
   constructor(plugin) {
     __publicField(this, "plugin");
@@ -32222,6 +38788,13 @@ var SyncOrchestrator = class {
     // 60s
     __publicField(this, "autoCommitTimer");
     __publicField(this, "autoFetchTimer");
+    __publicField(this, "heartbeatTimer");
+    __publicField(this, "heartbeatDelay", 1e3);
+    __publicField(this, "MAX_HEARTBEAT_DELAY", 1e3 * 60 * 5);
+    // 5 minutes
+    __publicField(this, "isTransitioning", false);
+    // Debounced sync to prevent rapid-fire Git operations
+    __publicField(this, "debouncedGitSync", debounce(() => this.performAutoCommit(), 2e3));
     this.plugin = plugin;
   }
   async initialize() {
@@ -32240,9 +38813,44 @@ var SyncOrchestrator = class {
     if (!this.plugin.settings.gitRemoteUrl) {
       this.setState({ status: "offline" });
       console.warn("[VaultSync] No Git remote configured. Operating in offline/local mode.");
+      this.startHeartbeat();
     } else {
       await this.performInitialSync();
+      if (this.currentState.status === "offline" || this.currentState.status === "error") {
+        this.startHeartbeat();
+      }
     }
+  }
+  /**
+   * Main entry point for all local file system events.
+   * Dispatches to CRDT and Git modules as needed.
+   */
+  async handleFileEvent(type, file, oldPath) {
+    if (file instanceof import_obsidian4.TFile) {
+      const classification = classifyFile(file.path);
+      this.plugin.logSyncEvent("file_op", `File ${type}: ${file.path}`, "info", `Classification: ${classification.type}`, [file.path]);
+      switch (type) {
+        case "create":
+        case "modify":
+          if (classification.type !== "binary") {
+            const content = await this.plugin.app.vault.read(file);
+            await this.plugin.crdtManager.updateCrdtFromFile(file.path, content);
+          }
+          break;
+        case "delete":
+          this.plugin.crdtManager.releaseDoc(file.path);
+          break;
+        case "rename":
+          if (oldPath) {
+            await this.plugin.crdtManager.renameDoc(oldPath, file.path);
+          }
+          break;
+      }
+    } else if (file instanceof import_obsidian4.TFolder && type === "rename" && oldPath) {
+      this.plugin.logSyncEvent("file_op", `Folder renamed: ${oldPath} -> ${file.path}`, "info");
+      await this.plugin.crdtManager.rekeyDocsInFolder(oldPath, file.path);
+    }
+    this.debouncedGitSync();
   }
   startTimers() {
     this.stopTimers();
@@ -32257,6 +38865,42 @@ var SyncOrchestrator = class {
       clearInterval(this.autoCommitTimer);
     if (this.autoFetchTimer)
       clearInterval(this.autoFetchTimer);
+  }
+  startHeartbeat() {
+    this.stopHeartbeat();
+    this.heartbeatDelay = 1e3;
+    this.scheduleHeartbeat();
+  }
+  stopHeartbeat() {
+    if (this.heartbeatTimer) {
+      clearTimeout(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+  }
+  scheduleHeartbeat() {
+    this.heartbeatTimer = setTimeout(() => this.performHeartbeat(), this.heartbeatDelay);
+  }
+  async performHeartbeat() {
+    if (this.currentState.status !== "offline" && this.currentState.status !== "error") {
+      this.stopHeartbeat();
+      return;
+    }
+    try {
+      const { syncHubUrl } = this.plugin.settings;
+      if (!syncHubUrl)
+        return;
+      const healthUrl = syncHubUrl.replace(/^ws/, "http") + "/health";
+      const response = await fetch(healthUrl, { method: "HEAD" });
+      if (response.ok) {
+        console.log("[VaultSync] Heartbeat detected Hub availability. Triggering reconnect...");
+        this.handleReconnect();
+      } else {
+        throw new Error("Hub unreachable");
+      }
+    } catch (e) {
+      this.heartbeatDelay = Math.min(this.heartbeatDelay * 2, this.MAX_HEARTBEAT_DELAY);
+      this.scheduleHeartbeat();
+    }
   }
   isCellularConnection() {
     const conn = navigator.connection;
@@ -32276,38 +38920,71 @@ var SyncOrchestrator = class {
       const changedFiles = status.filter((row) => row[1] !== 1 || row[2] !== 1 || row[3] !== 1).map((row) => row[0]);
       if (changedFiles.length > 0) {
         this.setState({ status: "syncing", progress: 0 });
-        console.log(`[VaultSync] Auto-committing ${changedFiles.length} files...`);
+        this.plugin.logSyncEvent("commit", `Auto-committing ${changedFiles.length} files`, "info", void 0, changedFiles);
         const sha = await GitUtils.commit(this.plugin.app, this.plugin.settings.deviceName, changedFiles);
         if (sha && this.plugin.settings.gitRemoteUrl) {
-          await GitUtils.push(this.plugin.app, this.plugin.settings.gitRemoteUrl, this.plugin.settings.gitBranch);
+          try {
+            this.plugin.logSyncEvent("push", "Pushing changes to remote", "info", `SHA: ${sha}`);
+            await GitUtils.push(this.plugin.app, this.plugin.settings.gitRemoteUrl, this.plugin.settings.gitBranch);
+            this.setState({ status: "synced" });
+          } catch (e) {
+            if (e.name === "PushRejectedError") {
+              this.plugin.logSyncEvent("warn", "Git push rejected (Non-Fast-Forward). Starting auto-reconciliation...", "warn");
+              await this.handleReconnect();
+            } else {
+              throw e;
+            }
+          }
+        } else {
+          this.setState({ status: "synced" });
         }
-        this.setState({ status: "synced" });
       }
     } catch (e) {
       console.error("[VaultSync] Auto-commit failed", e);
+      this.plugin.logSyncEvent("error", "Auto-commit failed", "error", e.message);
       this.setState({ status: "error", error: { kind: "git", message: "Auto-commit failed" } });
     }
   }
   async handleReconnect() {
+    if (this.isTransitioning)
+      return;
+    this.isTransitioning = true;
+    this.stopHeartbeat();
     console.log("[VaultSync] Network restoration detected. Starting reconnection sequence...");
     this.setState({ status: "reconnecting" });
     try {
-      console.log("[VaultSync/Reconnect] 1/3 Re-establishing Hub connection...");
+      console.log("[VaultSync/Reconnect] 1/4 Re-establishing Hub connection...");
+      this.plugin.logSyncEvent("pull", "Re-establishing Hub connection", "info");
       this.plugin.hubClient.connect();
-      console.log("[VaultSync/Reconnect] 2/3 Requesting CRDT catch-up...");
-      this.setState({ status: "syncing", progress: -1 });
+      await new Promise((r) => setTimeout(r, 2e3));
+      console.log("[VaultSync/Reconnect] 2/4 Requesting CRDT catch-up...");
+      this.setState({ status: "syncing-catchup", progress: -1 });
+      this.plugin.logSyncEvent("pull", "Starting CRDT catch-up", "info");
       await this.plugin.crdtManager.catchUpAll();
-      console.log("[VaultSync/Reconnect] 3/3 Triggering background Git sync...");
-      await this.performInitialSync(false);
+      console.log("[VaultSync/Reconnect] 3/4 Pushing local commits...");
+      this.plugin.logSyncEvent("push", "Pushing offline changes", "info");
+      await this.performAutoCommit();
+      console.log("[VaultSync/Reconnect] 4/4 Triggering full Git fetch...");
+      this.plugin.logSyncEvent("pull", "Fetching remote Git changes", "info");
+      await this.performInitialSync(true);
       console.log("[VaultSync/Reconnect] Sequence complete.");
+      this.plugin.logSyncEvent("pull", "Reconnection sequence complete", "info");
+      this.setState({ status: "synced" });
     } catch (err) {
       console.error("[VaultSync/Reconnect] Sequence failed:", err);
+      this.plugin.logSyncEvent("error", "Reconnection sequence failed", "error", err.message);
       this.setState({ status: "error", error: { kind: "network", message: "Reconnection sequence failed" } });
+      this.startHeartbeat();
+    } finally {
+      this.isTransitioning = false;
     }
   }
   handleDisconnect() {
+    if (this.currentState.status === "offline")
+      return;
     console.log("[VaultSync] Network connection lost.");
     this.setState({ status: "offline" });
+    this.startHeartbeat();
   }
   async performInitialSync(force = false) {
     const now = Date.now();
@@ -32325,7 +39002,7 @@ var SyncOrchestrator = class {
     }
     this.setState({ status: "syncing", progress: 0 });
     try {
-      console.log("[VaultSync] Performing background Git fetch and CRDT merge...");
+      this.plugin.logSyncEvent("pull", "Starting background Git sync", "info");
       await GitUtils.fetchAndMerge(
         this.plugin.app,
         this.plugin.settings.gitRemoteUrl,
@@ -32335,11 +39012,14 @@ var SyncOrchestrator = class {
           var _a;
           const ext = (_a = path2.split(".").pop()) == null ? void 0 : _a.toLowerCase();
           return ext === "md" || ext === "json" || ext === "canvas";
-        }
+        },
+        (path2) => this.plugin.isFileOpen(path2)
       );
       this.lastFetchTimestamp = Date.now();
       this.setState({ status: "synced" });
+      this.plugin.logSyncEvent("pull", "Background Git sync complete", "info");
     } catch (error) {
+      this.plugin.logSyncEvent("error", "Git sync failed", "error", error.message);
       console.error("[VaultSync] Git sync failed", error);
       this.setState({
         status: "error",
@@ -32626,9 +39306,9 @@ var isNaN3 = Number.isNaN;
 var parseInt2 = Number.parseInt;
 
 // ../node_modules/.bun/lib0@0.2.117/node_modules/lib0/string.js
-var fromCharCode = String.fromCharCode;
+var fromCharCode2 = String.fromCharCode;
 var fromCodePoint = String.fromCodePoint;
-var MAX_UTF16_CHARACTER = fromCharCode(65535);
+var MAX_UTF16_CHARACTER = fromCharCode2(65535);
 var toLowerCase = (s) => s.toLowerCase();
 var trimLeftRegex = /^\s*/g;
 var trimLeft = (s) => s.replace(trimLeftRegex, "");
@@ -32657,14 +39337,14 @@ if (utf8TextDecoder && utf8TextDecoder.decode(new Uint8Array()).length === 1) {
 var repeat = (source, n) => unfold(n, () => source).join("");
 
 // ../node_modules/.bun/lib0@0.2.117/node_modules/lib0/encoding.js
-var Encoder = class {
+var Encoder2 = class {
   constructor() {
     this.cpos = 0;
     this.cbuf = new Uint8Array(100);
     this.bufs = [];
   }
 };
-var createEncoder = () => new Encoder();
+var createEncoder = () => new Encoder2();
 var length = (encoder2) => {
   let len = encoder2.cpos;
   for (let i = 0; i < encoder2.bufs.length; i++) {
@@ -32834,7 +39514,7 @@ var writeAny = (encoder2, data) => {
       write(encoder2, 127);
   }
 };
-var RleEncoder = class extends Encoder {
+var RleEncoder = class extends Encoder2 {
   /**
    * @param {function(Encoder, T):void} writer
    */
@@ -32870,7 +39550,7 @@ var flushUintOptRleEncoder = (encoder2) => {
 };
 var UintOptRleEncoder = class {
   constructor() {
-    this.encoder = new Encoder();
+    this.encoder = new Encoder2();
     this.s = 0;
     this.count = 0;
   }
@@ -32907,7 +39587,7 @@ var flushIntDiffOptRleEncoder = (encoder2) => {
 };
 var IntDiffOptRleEncoder = class {
   constructor() {
-    this.encoder = new Encoder();
+    this.encoder = new Encoder2();
     this.s = 0;
     this.count = 0;
     this.diff = 0;
@@ -32954,7 +39634,7 @@ var StringEncoder = class {
     this.lensE.write(string.length);
   }
   toUint8Array() {
-    const encoder2 = new Encoder();
+    const encoder2 = new Encoder2();
     this.sarr.push(this.s);
     this.s = "";
     writeVarString(encoder2, this.sarr.join(""));
@@ -32975,7 +39655,7 @@ var unexpectedCase = () => {
 // ../node_modules/.bun/lib0@0.2.117/node_modules/lib0/decoding.js
 var errorUnexpectedEndOfArray = create3("Unexpected end of array");
 var errorIntegerOutOfRange = create3("Integer out of Range");
-var Decoder = class {
+var Decoder2 = class {
   /**
    * @param {Uint8Array<Buf>} uint8Array Binary data to decode
    */
@@ -32984,7 +39664,7 @@ var Decoder = class {
     this.pos = 0;
   }
 };
-var createDecoder = (uint8Array) => new Decoder(uint8Array);
+var createDecoder = (uint8Array) => new Decoder2(uint8Array);
 var hasContent = (decoder2) => decoder2.pos !== decoder2.arr.length;
 var readUint8Array = (decoder2, len) => {
   const view = new Uint8Array(decoder2.arr.buffer, decoder2.pos + decoder2.arr.byteOffset, len);
@@ -33114,7 +39794,7 @@ var readAnyLookupTable = [
   // CASE 116: Uint8Array
 ];
 var readAny = (decoder2) => readAnyLookupTable[127 - readUint8(decoder2)](decoder2);
-var RleDecoder = class extends Decoder {
+var RleDecoder = class extends Decoder2 {
   /**
    * @param {Uint8Array} uint8Array
    * @param {function(Decoder):T} reader
@@ -33141,7 +39821,7 @@ var RleDecoder = class extends Decoder {
     );
   }
 };
-var UintOptRleDecoder = class extends Decoder {
+var UintOptRleDecoder = class extends Decoder2 {
   /**
    * @param {Uint8Array} uint8Array
    */
@@ -33167,7 +39847,7 @@ var UintOptRleDecoder = class extends Decoder {
     );
   }
 };
-var IntDiffOptRleDecoder = class extends Decoder {
+var IntDiffOptRleDecoder = class extends Decoder2 {
   /**
    * @param {Uint8Array} uint8Array
    */
@@ -33479,7 +40159,7 @@ var createUint8ArrayFromArrayBuffer = (buffer) => new Uint8Array(buffer);
 var toBase64Browser = (bytes) => {
   let s = "";
   for (let i = 0; i < bytes.byteLength; i++) {
-    s += fromCharCode(bytes[i]);
+    s += fromCharCode2(bytes[i]);
   }
   return btoa(s);
 };
@@ -33523,7 +40203,7 @@ var bool = (gen) => gen.next() >= 0.5;
 var int53 = (gen, min2, max2) => floor(gen.next() * (max2 + 1 - min2) + min2);
 var int32 = (gen, min2, max2) => floor(gen.next() * (max2 + 1 - min2) + min2);
 var int31 = (gen, min2, max2) => int32(gen, min2, max2);
-var letter = (gen) => fromCharCode(int31(gen, 97, 122));
+var letter = (gen) => fromCharCode2(int31(gen, 97, 122));
 var word = (gen, minLen = 0, maxLen = 20) => {
   const len = int31(gen, minLen, maxLen);
   let str = "";
@@ -41992,14 +48672,14 @@ var Awareness = class extends Observable {
       this.meta.get(this.clientID).lastUpdated) {
         this.setLocalState(this.getLocalState());
       }
-      const remove = [];
+      const remove2 = [];
       this.meta.forEach((meta, clientid) => {
         if (clientid !== this.clientID && outdatedTimeout <= now - meta.lastUpdated && this.states.has(clientid)) {
-          remove.push(clientid);
+          remove2.push(clientid);
         }
       });
-      if (remove.length > 0) {
-        removeAwarenessStates(this, remove, "timeout");
+      if (remove2.length > 0) {
+        removeAwarenessStates(this, remove2, "timeout");
       }
     }, floor(outdatedTimeout / 10));
     doc2.on("destroy", () => {
@@ -42772,7 +49452,7 @@ var WebrtcProvider = class extends ObservableV2 {
 };
 
 // src/crdt/manager.ts
-var import_obsidian3 = require("obsidian");
+var import_obsidian5 = require("obsidian");
 
 // ../node_modules/.bun/color-hash@2.0.2/node_modules/color-hash/dist/esm.js
 var __classPrivateFieldSet = function(receiver, privateMap, value) {
@@ -43363,6 +50043,8 @@ var ClientCrdtManager = class {
     __publicField(this, "lru", []);
     __publicField(this, "materializing", /* @__PURE__ */ new Set());
     __publicField(this, "debounceTimers", /* @__PURE__ */ new Map());
+    __publicField(this, "lastSyncHash", /* @__PURE__ */ new Map());
+    __publicField(this, "fallbackMonitoringTimers", /* @__PURE__ */ new Map());
     __publicField(this, "MAX_DOCS", 50);
     this.plugin = plugin;
   }
@@ -43392,6 +50074,7 @@ var ClientCrdtManager = class {
           if (activeClients.has(id2)) {
             activeClients.delete(id2);
             disconnectedCount++;
+            console.log(`[VaultSync/WebRTC] Peer disconnected  room=${this.plugin.settings.vaultId}/${filePath}  peerId=${id2}  peers=${activeClients.size}`);
           }
         }
         if (disconnectedCount > 0) {
@@ -43403,9 +50086,9 @@ var ClientCrdtManager = class {
         const state = states.get(id2);
         if (state == null ? void 0 : state.user) {
           const isNew = !activeClients.has(id2);
-          activeClients.add(id2);
           if (isNew) {
-            console.log(`[VaultSync/WebRTC] Peer joined  path=${filePath}  from=${state.user.name || "Unknown"}  clients=${states.size}`);
+            activeClients.add(id2);
+            console.log(`[VaultSync/WebRTC] Peer connected  room=${this.plugin.settings.vaultId}/${filePath}  peerId=${id2}  from=${state.user.name || "Unknown"}  peers=${activeClients.size}`);
           }
         }
       }
@@ -43413,11 +50096,13 @@ var ClientCrdtManager = class {
     doc2.on("update", (update, origin) => {
       var _a;
       const originName = typeof origin === "string" ? origin : ((_a = origin == null ? void 0 : origin.constructor) == null ? void 0 : _a.name) || typeof origin;
-      console.log(`[VaultSync/CRDT] Doc update received  path=${filePath}  bytes=${update.byteLength}  origin=${originName}`);
       if (origin !== "local-file-sync" && origin !== "sync-hub") {
+        console.log(`[VaultSync/CRDT] Local update  path=${filePath}  bytes=${update.byteLength}`);
         this.plugin.hubClient.sendUpdate(filePath, update);
       }
       if (origin !== "local-file-sync" && !this.plugin.isFileOpen(filePath)) {
+        console.log(`[VaultSync/CRDT] Remote update applied  path=${filePath}  bytes=${update.byteLength}`);
+        this.plugin.logSyncEvent("crdt_merge", `Merging remote CRDT update for ${filePath}`, "info", `Origin: ${originName}`, [filePath]);
         this.debouncedMaterialize(filePath, doc2);
       }
     });
@@ -43432,11 +50117,26 @@ var ClientCrdtManager = class {
         // Pass awareness to provider
       });
       this.providers.set(filePath, provider);
-      provider.on("status", (event) => {
-        const status = event.status || (typeof event === "string" ? event : JSON.stringify(event));
-        console.log(`[VaultSync/WebRTC] Status for ${filePath}:`, event);
-      });
       console.log(`[VaultSync/WebRTC] Provider created  room=${roomName}`);
+      provider.on("status", (event) => {
+        if (event.status === "connected") {
+          console.log(`[VaultSync/WebRTC] Connected to signaling  room=${roomName}`);
+        }
+      });
+      provider.on("peers", (event) => {
+        const peerCount = event.webrtcConns.size;
+        console.log(`[VaultSync/WebRTC] Peers updated  room=${roomName}  count=${peerCount}`);
+      });
+      provider.on("error", (err) => {
+        console.error(`[VaultSync/WebRTC] Signaling error  room=${roomName}  error=${err.message}`);
+      });
+      const fallbackTimer = setInterval(() => {
+        const states = awareness.getStates();
+        if (states.size > 1 && provider.webrtcConns.size === 0) {
+          console.warn(`[VaultSync/WebRTC] ICE failed \u2014 falling back to server relay  room=${roomName}`);
+        }
+      }, 1e4);
+      this.fallbackMonitoringTimers.set(filePath, fallbackTimer);
     }
     await new Promise((resolve2) => {
       persistence.once("synced", () => resolve2());
@@ -43484,14 +50184,18 @@ var ClientCrdtManager = class {
     return this.awareness.get(filePath);
   }
   async bootstrapDoc(filePath, doc2, persistence) {
+    const stateVector = encodeStateVector(doc2);
+    const hasRemoteHistory = stateVector.length > 1 || stateVector.length === 1 && stateVector[0] !== 0;
     const isNew = doc2.get("content", YText).length === 0 && doc2.getMap("data").size === 0;
-    if (isNew) {
-      console.log(`[CRDT] Bootstrapping new doc: ${filePath}`);
+    if (isNew && !hasRemoteHistory) {
+      console.log(`[CRDT] Bootstrapping new doc from disk: ${filePath}`);
       const file = this.plugin.app.vault.getAbstractFileByPath(filePath);
-      if (file instanceof import_obsidian3.TFile) {
+      if (file instanceof import_obsidian5.TFile) {
         const content = await this.plugin.app.vault.read(file);
         this.initializeFromFile(doc2, filePath, content);
       }
+    } else if (isNew && hasRemoteHistory) {
+      console.log(`[CRDT] Doc ${filePath} is empty locally but has remote history. Skipping disk bootstrap to prevent duplicates.`);
     }
   }
   async updateCrdtFromFile(filePath, content) {
@@ -43499,6 +50203,10 @@ var ClientCrdtManager = class {
       return;
     if (this.plugin.isFileOpen(filePath))
       return;
+    const currentHash = hashContent(content);
+    if (this.lastSyncHash.get(filePath) === currentHash) {
+      return;
+    }
     const doc2 = await this.getDoc(filePath);
     doc2.transact(() => {
       if (filePath.endsWith(".md")) {
@@ -43536,6 +50244,7 @@ var ClientCrdtManager = class {
         }
       }
     }, "local-file-sync");
+    this.lastSyncHash.set(filePath, currentHash);
   }
   debouncedMaterialize(filePath, doc2) {
     if (this.debounceTimers.has(filePath)) {
@@ -43551,7 +50260,7 @@ var ClientCrdtManager = class {
     if (this.plugin.isFileOpen(filePath))
       return;
     const file = this.plugin.app.vault.getAbstractFileByPath(filePath);
-    if (!(file instanceof import_obsidian3.TFile))
+    if (!(file instanceof import_obsidian5.TFile))
       return;
     let newContent = "";
     if (filePath.endsWith(".md")) {
@@ -43599,6 +50308,7 @@ var ClientCrdtManager = class {
     if (this.lru.length > this.MAX_DOCS) {
       const oldest = this.lru.shift();
       if (oldest) {
+        console.log(`[VaultSync/CRDT] Doc evicted  path=${oldest}  reason=lru_cap`);
         this.releaseDoc(oldest);
       }
     }
@@ -43608,6 +50318,11 @@ var ClientCrdtManager = class {
     const pers = this.persistence.get(filePath);
     const provider = this.providers.get(filePath);
     const awareness = this.awareness.get(filePath);
+    const fallbackTimer = this.fallbackMonitoringTimers.get(filePath);
+    if (fallbackTimer) {
+      clearInterval(fallbackTimer);
+      this.fallbackMonitoringTimers.delete(filePath);
+    }
     if (awareness) {
       awareness.destroy();
       this.awareness.delete(filePath);
@@ -43626,7 +50341,36 @@ var ClientCrdtManager = class {
       doc2.destroy();
       this.docs.delete(filePath);
       this.lru = this.lru.filter((p) => p !== filePath);
+      this.lastSyncHash.delete(filePath);
       console.log(`[VaultSync/CRDT] Doc released  path=${filePath}`);
+    }
+  }
+  async renameDoc(oldPath, newPath) {
+    console.log(`[VaultSync/CRDT] Renaming doc: ${oldPath} -> ${newPath}`);
+    const doc2 = this.docs.get(oldPath);
+    if (doc2) {
+      this.releaseDoc(oldPath);
+    }
+    const file = this.plugin.app.vault.getAbstractFileByPath(newPath);
+    if (file instanceof import_obsidian5.TFile) {
+      const content = await this.plugin.app.vault.read(file);
+      await this.updateCrdtFromFile(newPath, content);
+    }
+  }
+  /**
+   * Hardening: Recursively re-keys all active CRDT documents when a folder is renamed.
+   */
+  async rekeyDocsInFolder(oldFolderPath, newFolderPath) {
+    const oldPrefix = oldFolderPath.endsWith("/") ? oldFolderPath : oldFolderPath + "/";
+    const newPrefix = newFolderPath.endsWith("/") ? newFolderPath : newFolderPath + "/";
+    const activePaths = Array.from(this.docs.keys());
+    for (const oldPath of activePaths) {
+      if (oldPath.startsWith(oldPrefix)) {
+        const relativePath = oldPath.substring(oldPrefix.length);
+        const newPath = newPrefix + relativePath;
+        console.log(`[VaultSync/Hardening] Recursively re-keying: ${oldPath} -> ${newPath}`);
+        await this.renameDoc(oldPath, newPath);
+      }
     }
   }
   destroy() {
@@ -43690,6428 +50434,71 @@ var SignalingManager = class {
   }
 };
 
-// ../node_modules/.bun/zod@3.25.76/node_modules/zod/v3/external.js
-var external_exports = {};
-__export(external_exports, {
-  BRAND: () => BRAND,
-  DIRTY: () => DIRTY,
-  EMPTY_PATH: () => EMPTY_PATH,
-  INVALID: () => INVALID,
-  NEVER: () => NEVER,
-  OK: () => OK,
-  ParseStatus: () => ParseStatus,
-  Schema: () => ZodType,
-  ZodAny: () => ZodAny,
-  ZodArray: () => ZodArray,
-  ZodBigInt: () => ZodBigInt,
-  ZodBoolean: () => ZodBoolean,
-  ZodBranded: () => ZodBranded,
-  ZodCatch: () => ZodCatch,
-  ZodDate: () => ZodDate,
-  ZodDefault: () => ZodDefault,
-  ZodDiscriminatedUnion: () => ZodDiscriminatedUnion,
-  ZodEffects: () => ZodEffects,
-  ZodEnum: () => ZodEnum,
-  ZodError: () => ZodError,
-  ZodFirstPartyTypeKind: () => ZodFirstPartyTypeKind,
-  ZodFunction: () => ZodFunction,
-  ZodIntersection: () => ZodIntersection,
-  ZodIssueCode: () => ZodIssueCode,
-  ZodLazy: () => ZodLazy,
-  ZodLiteral: () => ZodLiteral,
-  ZodMap: () => ZodMap,
-  ZodNaN: () => ZodNaN,
-  ZodNativeEnum: () => ZodNativeEnum,
-  ZodNever: () => ZodNever,
-  ZodNull: () => ZodNull,
-  ZodNullable: () => ZodNullable,
-  ZodNumber: () => ZodNumber,
-  ZodObject: () => ZodObject,
-  ZodOptional: () => ZodOptional,
-  ZodParsedType: () => ZodParsedType,
-  ZodPipeline: () => ZodPipeline,
-  ZodPromise: () => ZodPromise,
-  ZodReadonly: () => ZodReadonly,
-  ZodRecord: () => ZodRecord,
-  ZodSchema: () => ZodType,
-  ZodSet: () => ZodSet,
-  ZodString: () => ZodString,
-  ZodSymbol: () => ZodSymbol,
-  ZodTransformer: () => ZodEffects,
-  ZodTuple: () => ZodTuple,
-  ZodType: () => ZodType,
-  ZodUndefined: () => ZodUndefined,
-  ZodUnion: () => ZodUnion,
-  ZodUnknown: () => ZodUnknown,
-  ZodVoid: () => ZodVoid,
-  addIssueToContext: () => addIssueToContext,
-  any: () => anyType,
-  array: () => arrayType,
-  bigint: () => bigIntType,
-  boolean: () => booleanType,
-  coerce: () => coerce,
-  custom: () => custom,
-  date: () => dateType,
-  datetimeRegex: () => datetimeRegex,
-  defaultErrorMap: () => en_default,
-  discriminatedUnion: () => discriminatedUnionType,
-  effect: () => effectsType,
-  enum: () => enumType,
-  function: () => functionType,
-  getErrorMap: () => getErrorMap,
-  getParsedType: () => getParsedType,
-  instanceof: () => instanceOfType,
-  intersection: () => intersectionType,
-  isAborted: () => isAborted,
-  isAsync: () => isAsync,
-  isDirty: () => isDirty,
-  isValid: () => isValid,
-  late: () => late,
-  lazy: () => lazyType,
-  literal: () => literalType,
-  makeIssue: () => makeIssue,
-  map: () => mapType,
-  nan: () => nanType,
-  nativeEnum: () => nativeEnumType,
-  never: () => neverType,
-  null: () => nullType,
-  nullable: () => nullableType,
-  number: () => numberType,
-  object: () => objectType,
-  objectUtil: () => objectUtil,
-  oboolean: () => oboolean,
-  onumber: () => onumber,
-  optional: () => optionalType,
-  ostring: () => ostring,
-  pipeline: () => pipelineType,
-  preprocess: () => preprocessType,
-  promise: () => promiseType,
-  quotelessJson: () => quotelessJson,
-  record: () => recordType,
-  set: () => setType,
-  setErrorMap: () => setErrorMap,
-  strictObject: () => strictObjectType,
-  string: () => stringType,
-  symbol: () => symbolType,
-  transformer: () => effectsType,
-  tuple: () => tupleType,
-  undefined: () => undefinedType,
-  union: () => unionType,
-  unknown: () => unknownType,
-  util: () => util,
-  void: () => voidType
-});
+// src/sync/hub-client.ts
+var import_obsidian6 = require("obsidian");
 
-// ../node_modules/.bun/zod@3.25.76/node_modules/zod/v3/helpers/util.js
-var util;
-(function(util2) {
-  util2.assertEqual = (_) => {
-  };
-  function assertIs(_arg) {
-  }
-  util2.assertIs = assertIs;
-  function assertNever(_x) {
-    throw new Error();
-  }
-  util2.assertNever = assertNever;
-  util2.arrayToEnum = (items) => {
-    const obj = {};
-    for (const item of items) {
-      obj[item] = item;
-    }
-    return obj;
-  };
-  util2.getValidEnumValues = (obj) => {
-    const validKeys = util2.objectKeys(obj).filter((k) => typeof obj[obj[k]] !== "number");
-    const filtered = {};
-    for (const k of validKeys) {
-      filtered[k] = obj[k];
-    }
-    return util2.objectValues(filtered);
-  };
-  util2.objectValues = (obj) => {
-    return util2.objectKeys(obj).map(function(e) {
-      return obj[e];
-    });
-  };
-  util2.objectKeys = typeof Object.keys === "function" ? (obj) => Object.keys(obj) : (object) => {
-    const keys2 = [];
-    for (const key in object) {
-      if (Object.prototype.hasOwnProperty.call(object, key)) {
-        keys2.push(key);
-      }
-    }
-    return keys2;
-  };
-  util2.find = (arr, checker) => {
-    for (const item of arr) {
-      if (checker(item))
-        return item;
-    }
-    return void 0;
-  };
-  util2.isInteger = typeof Number.isInteger === "function" ? (val) => Number.isInteger(val) : (val) => typeof val === "number" && Number.isFinite(val) && Math.floor(val) === val;
-  function joinValues(array, separator = " | ") {
-    return array.map((val) => typeof val === "string" ? `'${val}'` : val).join(separator);
-  }
-  util2.joinValues = joinValues;
-  util2.jsonStringifyReplacer = (_, value) => {
-    if (typeof value === "bigint") {
-      return value.toString();
-    }
-    return value;
-  };
-})(util || (util = {}));
-var objectUtil;
-(function(objectUtil2) {
-  objectUtil2.mergeShapes = (first, second) => {
-    return {
-      ...first,
-      ...second
-      // second overwrites first
-    };
-  };
-})(objectUtil || (objectUtil = {}));
-var ZodParsedType = util.arrayToEnum([
-  "string",
-  "nan",
-  "number",
-  "integer",
-  "float",
-  "boolean",
-  "date",
-  "bigint",
-  "symbol",
-  "function",
-  "undefined",
-  "null",
-  "array",
-  "object",
-  "unknown",
-  "promise",
-  "void",
-  "never",
-  "map",
-  "set"
-]);
-var getParsedType = (data) => {
-  const t = typeof data;
-  switch (t) {
-    case "undefined":
-      return ZodParsedType.undefined;
-    case "string":
-      return ZodParsedType.string;
-    case "number":
-      return Number.isNaN(data) ? ZodParsedType.nan : ZodParsedType.number;
-    case "boolean":
-      return ZodParsedType.boolean;
-    case "function":
-      return ZodParsedType.function;
-    case "bigint":
-      return ZodParsedType.bigint;
-    case "symbol":
-      return ZodParsedType.symbol;
-    case "object":
-      if (Array.isArray(data)) {
-        return ZodParsedType.array;
-      }
-      if (data === null) {
-        return ZodParsedType.null;
-      }
-      if (data.then && typeof data.then === "function" && data.catch && typeof data.catch === "function") {
-        return ZodParsedType.promise;
-      }
-      if (typeof Map !== "undefined" && data instanceof Map) {
-        return ZodParsedType.map;
-      }
-      if (typeof Set !== "undefined" && data instanceof Set) {
-        return ZodParsedType.set;
-      }
-      if (typeof Date !== "undefined" && data instanceof Date) {
-        return ZodParsedType.date;
-      }
-      return ZodParsedType.object;
-    default:
-      return ZodParsedType.unknown;
-  }
-};
-
-// ../node_modules/.bun/zod@3.25.76/node_modules/zod/v3/ZodError.js
-var ZodIssueCode = util.arrayToEnum([
-  "invalid_type",
-  "invalid_literal",
-  "custom",
-  "invalid_union",
-  "invalid_union_discriminator",
-  "invalid_enum_value",
-  "unrecognized_keys",
-  "invalid_arguments",
-  "invalid_return_type",
-  "invalid_date",
-  "invalid_string",
-  "too_small",
-  "too_big",
-  "invalid_intersection_types",
-  "not_multiple_of",
-  "not_finite"
-]);
-var quotelessJson = (obj) => {
-  const json = JSON.stringify(obj, null, 2);
-  return json.replace(/"([^"]+)":/g, "$1:");
-};
-var ZodError = class _ZodError extends Error {
-  get errors() {
-    return this.issues;
-  }
-  constructor(issues) {
-    super();
-    this.issues = [];
-    this.addIssue = (sub) => {
-      this.issues = [...this.issues, sub];
-    };
-    this.addIssues = (subs = []) => {
-      this.issues = [...this.issues, ...subs];
-    };
-    const actualProto = new.target.prototype;
-    if (Object.setPrototypeOf) {
-      Object.setPrototypeOf(this, actualProto);
-    } else {
-      this.__proto__ = actualProto;
-    }
-    this.name = "ZodError";
-    this.issues = issues;
-  }
-  format(_mapper) {
-    const mapper = _mapper || function(issue) {
-      return issue.message;
-    };
-    const fieldErrors = { _errors: [] };
-    const processError = (error) => {
-      for (const issue of error.issues) {
-        if (issue.code === "invalid_union") {
-          issue.unionErrors.map(processError);
-        } else if (issue.code === "invalid_return_type") {
-          processError(issue.returnTypeError);
-        } else if (issue.code === "invalid_arguments") {
-          processError(issue.argumentsError);
-        } else if (issue.path.length === 0) {
-          fieldErrors._errors.push(mapper(issue));
-        } else {
-          let curr = fieldErrors;
-          let i = 0;
-          while (i < issue.path.length) {
-            const el = issue.path[i];
-            const terminal = i === issue.path.length - 1;
-            if (!terminal) {
-              curr[el] = curr[el] || { _errors: [] };
-            } else {
-              curr[el] = curr[el] || { _errors: [] };
-              curr[el]._errors.push(mapper(issue));
-            }
-            curr = curr[el];
-            i++;
-          }
-        }
-      }
-    };
-    processError(this);
-    return fieldErrors;
-  }
-  static assert(value) {
-    if (!(value instanceof _ZodError)) {
-      throw new Error(`Not a ZodError: ${value}`);
-    }
-  }
-  toString() {
-    return this.message;
-  }
-  get message() {
-    return JSON.stringify(this.issues, util.jsonStringifyReplacer, 2);
-  }
-  get isEmpty() {
-    return this.issues.length === 0;
-  }
-  flatten(mapper = (issue) => issue.message) {
-    const fieldErrors = {};
-    const formErrors = [];
-    for (const sub of this.issues) {
-      if (sub.path.length > 0) {
-        const firstEl = sub.path[0];
-        fieldErrors[firstEl] = fieldErrors[firstEl] || [];
-        fieldErrors[firstEl].push(mapper(sub));
-      } else {
-        formErrors.push(mapper(sub));
-      }
-    }
-    return { formErrors, fieldErrors };
-  }
-  get formErrors() {
-    return this.flatten();
-  }
-};
-ZodError.create = (issues) => {
-  const error = new ZodError(issues);
-  return error;
-};
-
-// ../node_modules/.bun/zod@3.25.76/node_modules/zod/v3/locales/en.js
-var errorMap = (issue, _ctx) => {
-  let message;
-  switch (issue.code) {
-    case ZodIssueCode.invalid_type:
-      if (issue.received === ZodParsedType.undefined) {
-        message = "Required";
-      } else {
-        message = `Expected ${issue.expected}, received ${issue.received}`;
-      }
-      break;
-    case ZodIssueCode.invalid_literal:
-      message = `Invalid literal value, expected ${JSON.stringify(issue.expected, util.jsonStringifyReplacer)}`;
-      break;
-    case ZodIssueCode.unrecognized_keys:
-      message = `Unrecognized key(s) in object: ${util.joinValues(issue.keys, ", ")}`;
-      break;
-    case ZodIssueCode.invalid_union:
-      message = `Invalid input`;
-      break;
-    case ZodIssueCode.invalid_union_discriminator:
-      message = `Invalid discriminator value. Expected ${util.joinValues(issue.options)}`;
-      break;
-    case ZodIssueCode.invalid_enum_value:
-      message = `Invalid enum value. Expected ${util.joinValues(issue.options)}, received '${issue.received}'`;
-      break;
-    case ZodIssueCode.invalid_arguments:
-      message = `Invalid function arguments`;
-      break;
-    case ZodIssueCode.invalid_return_type:
-      message = `Invalid function return type`;
-      break;
-    case ZodIssueCode.invalid_date:
-      message = `Invalid date`;
-      break;
-    case ZodIssueCode.invalid_string:
-      if (typeof issue.validation === "object") {
-        if ("includes" in issue.validation) {
-          message = `Invalid input: must include "${issue.validation.includes}"`;
-          if (typeof issue.validation.position === "number") {
-            message = `${message} at one or more positions greater than or equal to ${issue.validation.position}`;
-          }
-        } else if ("startsWith" in issue.validation) {
-          message = `Invalid input: must start with "${issue.validation.startsWith}"`;
-        } else if ("endsWith" in issue.validation) {
-          message = `Invalid input: must end with "${issue.validation.endsWith}"`;
-        } else {
-          util.assertNever(issue.validation);
-        }
-      } else if (issue.validation !== "regex") {
-        message = `Invalid ${issue.validation}`;
-      } else {
-        message = "Invalid";
-      }
-      break;
-    case ZodIssueCode.too_small:
-      if (issue.type === "array")
-        message = `Array must contain ${issue.exact ? "exactly" : issue.inclusive ? `at least` : `more than`} ${issue.minimum} element(s)`;
-      else if (issue.type === "string")
-        message = `String must contain ${issue.exact ? "exactly" : issue.inclusive ? `at least` : `over`} ${issue.minimum} character(s)`;
-      else if (issue.type === "number")
-        message = `Number must be ${issue.exact ? `exactly equal to ` : issue.inclusive ? `greater than or equal to ` : `greater than `}${issue.minimum}`;
-      else if (issue.type === "bigint")
-        message = `Number must be ${issue.exact ? `exactly equal to ` : issue.inclusive ? `greater than or equal to ` : `greater than `}${issue.minimum}`;
-      else if (issue.type === "date")
-        message = `Date must be ${issue.exact ? `exactly equal to ` : issue.inclusive ? `greater than or equal to ` : `greater than `}${new Date(Number(issue.minimum))}`;
-      else
-        message = "Invalid input";
-      break;
-    case ZodIssueCode.too_big:
-      if (issue.type === "array")
-        message = `Array must contain ${issue.exact ? `exactly` : issue.inclusive ? `at most` : `less than`} ${issue.maximum} element(s)`;
-      else if (issue.type === "string")
-        message = `String must contain ${issue.exact ? `exactly` : issue.inclusive ? `at most` : `under`} ${issue.maximum} character(s)`;
-      else if (issue.type === "number")
-        message = `Number must be ${issue.exact ? `exactly` : issue.inclusive ? `less than or equal to` : `less than`} ${issue.maximum}`;
-      else if (issue.type === "bigint")
-        message = `BigInt must be ${issue.exact ? `exactly` : issue.inclusive ? `less than or equal to` : `less than`} ${issue.maximum}`;
-      else if (issue.type === "date")
-        message = `Date must be ${issue.exact ? `exactly` : issue.inclusive ? `smaller than or equal to` : `smaller than`} ${new Date(Number(issue.maximum))}`;
-      else
-        message = "Invalid input";
-      break;
-    case ZodIssueCode.custom:
-      message = `Invalid input`;
-      break;
-    case ZodIssueCode.invalid_intersection_types:
-      message = `Intersection results could not be merged`;
-      break;
-    case ZodIssueCode.not_multiple_of:
-      message = `Number must be a multiple of ${issue.multipleOf}`;
-      break;
-    case ZodIssueCode.not_finite:
-      message = "Number must be finite";
-      break;
-    default:
-      message = _ctx.defaultError;
-      util.assertNever(issue);
-  }
-  return { message };
-};
-var en_default = errorMap;
-
-// ../node_modules/.bun/zod@3.25.76/node_modules/zod/v3/errors.js
-var overrideErrorMap = en_default;
-function setErrorMap(map2) {
-  overrideErrorMap = map2;
-}
-function getErrorMap() {
-  return overrideErrorMap;
-}
-
-// ../node_modules/.bun/zod@3.25.76/node_modules/zod/v3/helpers/parseUtil.js
-var makeIssue = (params2) => {
-  const { data, path: path2, errorMaps, issueData } = params2;
-  const fullPath = [...path2, ...issueData.path || []];
-  const fullIssue = {
-    ...issueData,
-    path: fullPath
-  };
-  if (issueData.message !== void 0) {
-    return {
-      ...issueData,
-      path: fullPath,
-      message: issueData.message
-    };
-  }
-  let errorMessage = "";
-  const maps = errorMaps.filter((m) => !!m).slice().reverse();
-  for (const map2 of maps) {
-    errorMessage = map2(fullIssue, { data, defaultError: errorMessage }).message;
-  }
-  return {
-    ...issueData,
-    path: fullPath,
-    message: errorMessage
-  };
-};
-var EMPTY_PATH = [];
-function addIssueToContext(ctx, issueData) {
-  const overrideMap = getErrorMap();
-  const issue = makeIssue({
-    issueData,
-    data: ctx.data,
-    path: ctx.path,
-    errorMaps: [
-      ctx.common.contextualErrorMap,
-      // contextual error map is first priority
-      ctx.schemaErrorMap,
-      // then schema-bound map if available
-      overrideMap,
-      // then global override map
-      overrideMap === en_default ? void 0 : en_default
-      // then global default map
-    ].filter((x) => !!x)
-  });
-  ctx.common.issues.push(issue);
-}
-var ParseStatus = class _ParseStatus {
+// src/sync/sync-buffer.ts
+var SyncBuffer = class {
   constructor() {
-    this.value = "valid";
-  }
-  dirty() {
-    if (this.value === "valid")
-      this.value = "dirty";
-  }
-  abort() {
-    if (this.value !== "aborted")
-      this.value = "aborted";
-  }
-  static mergeArray(status, results) {
-    const arrayValue = [];
-    for (const s of results) {
-      if (s.status === "aborted")
-        return INVALID;
-      if (s.status === "dirty")
-        status.dirty();
-      arrayValue.push(s.value);
-    }
-    return { status: status.value, value: arrayValue };
-  }
-  static async mergeObjectAsync(status, pairs) {
-    const syncPairs = [];
-    for (const pair of pairs) {
-      const key = await pair.key;
-      const value = await pair.value;
-      syncPairs.push({
-        key,
-        value
-      });
-    }
-    return _ParseStatus.mergeObjectSync(status, syncPairs);
-  }
-  static mergeObjectSync(status, pairs) {
-    const finalObject = {};
-    for (const pair of pairs) {
-      const { key, value } = pair;
-      if (key.status === "aborted")
-        return INVALID;
-      if (value.status === "aborted")
-        return INVALID;
-      if (key.status === "dirty")
-        status.dirty();
-      if (value.status === "dirty")
-        status.dirty();
-      if (key.value !== "__proto__" && (typeof value.value !== "undefined" || pair.alwaysSet)) {
-        finalObject[key.value] = value.value;
-      }
-    }
-    return { status: status.value, value: finalObject };
-  }
-};
-var INVALID = Object.freeze({
-  status: "aborted"
-});
-var DIRTY = (value) => ({ status: "dirty", value });
-var OK = (value) => ({ status: "valid", value });
-var isAborted = (x) => x.status === "aborted";
-var isDirty = (x) => x.status === "dirty";
-var isValid = (x) => x.status === "valid";
-var isAsync = (x) => typeof Promise !== "undefined" && x instanceof Promise;
-
-// ../node_modules/.bun/zod@3.25.76/node_modules/zod/v3/helpers/errorUtil.js
-var errorUtil;
-(function(errorUtil2) {
-  errorUtil2.errToObj = (message) => typeof message === "string" ? { message } : message || {};
-  errorUtil2.toString = (message) => typeof message === "string" ? message : message == null ? void 0 : message.message;
-})(errorUtil || (errorUtil = {}));
-
-// ../node_modules/.bun/zod@3.25.76/node_modules/zod/v3/types.js
-var ParseInputLazyPath = class {
-  constructor(parent, value, path2, key) {
-    this._cachedPath = [];
-    this.parent = parent;
-    this.data = value;
-    this._path = path2;
-    this._key = key;
-  }
-  get path() {
-    if (!this._cachedPath.length) {
-      if (Array.isArray(this._key)) {
-        this._cachedPath.push(...this._path, ...this._key);
-      } else {
-        this._cachedPath.push(...this._path, this._key);
-      }
-    }
-    return this._cachedPath;
-  }
-};
-var handleResult = (ctx, result) => {
-  if (isValid(result)) {
-    return { success: true, data: result.value };
-  } else {
-    if (!ctx.common.issues.length) {
-      throw new Error("Validation failed but no issues detected.");
-    }
-    return {
-      success: false,
-      get error() {
-        if (this._error)
-          return this._error;
-        const error = new ZodError(ctx.common.issues);
-        this._error = error;
-        return this._error;
-      }
-    };
-  }
-};
-function processCreateParams(params2) {
-  if (!params2)
-    return {};
-  const { errorMap: errorMap2, invalid_type_error, required_error, description } = params2;
-  if (errorMap2 && (invalid_type_error || required_error)) {
-    throw new Error(`Can't use "invalid_type_error" or "required_error" in conjunction with custom error map.`);
-  }
-  if (errorMap2)
-    return { errorMap: errorMap2, description };
-  const customMap = (iss, ctx) => {
-    var _a, _b;
-    const { message } = params2;
-    if (iss.code === "invalid_enum_value") {
-      return { message: message != null ? message : ctx.defaultError };
-    }
-    if (typeof ctx.data === "undefined") {
-      return { message: (_a = message != null ? message : required_error) != null ? _a : ctx.defaultError };
-    }
-    if (iss.code !== "invalid_type")
-      return { message: ctx.defaultError };
-    return { message: (_b = message != null ? message : invalid_type_error) != null ? _b : ctx.defaultError };
-  };
-  return { errorMap: customMap, description };
-}
-var ZodType = class {
-  get description() {
-    return this._def.description;
-  }
-  _getType(input) {
-    return getParsedType(input.data);
-  }
-  _getOrReturnCtx(input, ctx) {
-    return ctx || {
-      common: input.parent.common,
-      data: input.data,
-      parsedType: getParsedType(input.data),
-      schemaErrorMap: this._def.errorMap,
-      path: input.path,
-      parent: input.parent
-    };
-  }
-  _processInputParams(input) {
-    return {
-      status: new ParseStatus(),
-      ctx: {
-        common: input.parent.common,
-        data: input.data,
-        parsedType: getParsedType(input.data),
-        schemaErrorMap: this._def.errorMap,
-        path: input.path,
-        parent: input.parent
-      }
-    };
-  }
-  _parseSync(input) {
-    const result = this._parse(input);
-    if (isAsync(result)) {
-      throw new Error("Synchronous parse encountered promise.");
-    }
-    return result;
-  }
-  _parseAsync(input) {
-    const result = this._parse(input);
-    return Promise.resolve(result);
-  }
-  parse(data, params2) {
-    const result = this.safeParse(data, params2);
-    if (result.success)
-      return result.data;
-    throw result.error;
-  }
-  safeParse(data, params2) {
-    var _a;
-    const ctx = {
-      common: {
-        issues: [],
-        async: (_a = params2 == null ? void 0 : params2.async) != null ? _a : false,
-        contextualErrorMap: params2 == null ? void 0 : params2.errorMap
-      },
-      path: (params2 == null ? void 0 : params2.path) || [],
-      schemaErrorMap: this._def.errorMap,
-      parent: null,
-      data,
-      parsedType: getParsedType(data)
-    };
-    const result = this._parseSync({ data, path: ctx.path, parent: ctx });
-    return handleResult(ctx, result);
-  }
-  "~validate"(data) {
-    var _a, _b;
-    const ctx = {
-      common: {
-        issues: [],
-        async: !!this["~standard"].async
-      },
-      path: [],
-      schemaErrorMap: this._def.errorMap,
-      parent: null,
-      data,
-      parsedType: getParsedType(data)
-    };
-    if (!this["~standard"].async) {
-      try {
-        const result = this._parseSync({ data, path: [], parent: ctx });
-        return isValid(result) ? {
-          value: result.value
-        } : {
-          issues: ctx.common.issues
-        };
-      } catch (err) {
-        if ((_b = (_a = err == null ? void 0 : err.message) == null ? void 0 : _a.toLowerCase()) == null ? void 0 : _b.includes("encountered")) {
-          this["~standard"].async = true;
-        }
-        ctx.common = {
-          issues: [],
-          async: true
-        };
-      }
-    }
-    return this._parseAsync({ data, path: [], parent: ctx }).then((result) => isValid(result) ? {
-      value: result.value
-    } : {
-      issues: ctx.common.issues
-    });
-  }
-  async parseAsync(data, params2) {
-    const result = await this.safeParseAsync(data, params2);
-    if (result.success)
-      return result.data;
-    throw result.error;
-  }
-  async safeParseAsync(data, params2) {
-    const ctx = {
-      common: {
-        issues: [],
-        contextualErrorMap: params2 == null ? void 0 : params2.errorMap,
-        async: true
-      },
-      path: (params2 == null ? void 0 : params2.path) || [],
-      schemaErrorMap: this._def.errorMap,
-      parent: null,
-      data,
-      parsedType: getParsedType(data)
-    };
-    const maybeAsyncResult = this._parse({ data, path: ctx.path, parent: ctx });
-    const result = await (isAsync(maybeAsyncResult) ? maybeAsyncResult : Promise.resolve(maybeAsyncResult));
-    return handleResult(ctx, result);
-  }
-  refine(check, message) {
-    const getIssueProperties = (val) => {
-      if (typeof message === "string" || typeof message === "undefined") {
-        return { message };
-      } else if (typeof message === "function") {
-        return message(val);
-      } else {
-        return message;
-      }
-    };
-    return this._refinement((val, ctx) => {
-      const result = check(val);
-      const setError = () => ctx.addIssue({
-        code: ZodIssueCode.custom,
-        ...getIssueProperties(val)
-      });
-      if (typeof Promise !== "undefined" && result instanceof Promise) {
-        return result.then((data) => {
-          if (!data) {
-            setError();
-            return false;
-          } else {
-            return true;
-          }
-        });
-      }
-      if (!result) {
-        setError();
-        return false;
-      } else {
-        return true;
-      }
-    });
-  }
-  refinement(check, refinementData) {
-    return this._refinement((val, ctx) => {
-      if (!check(val)) {
-        ctx.addIssue(typeof refinementData === "function" ? refinementData(val, ctx) : refinementData);
-        return false;
-      } else {
-        return true;
-      }
-    });
-  }
-  _refinement(refinement) {
-    return new ZodEffects({
-      schema: this,
-      typeName: ZodFirstPartyTypeKind.ZodEffects,
-      effect: { type: "refinement", refinement }
-    });
-  }
-  superRefine(refinement) {
-    return this._refinement(refinement);
-  }
-  constructor(def) {
-    this.spa = this.safeParseAsync;
-    this._def = def;
-    this.parse = this.parse.bind(this);
-    this.safeParse = this.safeParse.bind(this);
-    this.parseAsync = this.parseAsync.bind(this);
-    this.safeParseAsync = this.safeParseAsync.bind(this);
-    this.spa = this.spa.bind(this);
-    this.refine = this.refine.bind(this);
-    this.refinement = this.refinement.bind(this);
-    this.superRefine = this.superRefine.bind(this);
-    this.optional = this.optional.bind(this);
-    this.nullable = this.nullable.bind(this);
-    this.nullish = this.nullish.bind(this);
-    this.array = this.array.bind(this);
-    this.promise = this.promise.bind(this);
-    this.or = this.or.bind(this);
-    this.and = this.and.bind(this);
-    this.transform = this.transform.bind(this);
-    this.brand = this.brand.bind(this);
-    this.default = this.default.bind(this);
-    this.catch = this.catch.bind(this);
-    this.describe = this.describe.bind(this);
-    this.pipe = this.pipe.bind(this);
-    this.readonly = this.readonly.bind(this);
-    this.isNullable = this.isNullable.bind(this);
-    this.isOptional = this.isOptional.bind(this);
-    this["~standard"] = {
-      version: 1,
-      vendor: "zod",
-      validate: (data) => this["~validate"](data)
-    };
-  }
-  optional() {
-    return ZodOptional.create(this, this._def);
-  }
-  nullable() {
-    return ZodNullable.create(this, this._def);
-  }
-  nullish() {
-    return this.nullable().optional();
-  }
-  array() {
-    return ZodArray.create(this);
-  }
-  promise() {
-    return ZodPromise.create(this, this._def);
-  }
-  or(option) {
-    return ZodUnion.create([this, option], this._def);
-  }
-  and(incoming) {
-    return ZodIntersection.create(this, incoming, this._def);
-  }
-  transform(transform) {
-    return new ZodEffects({
-      ...processCreateParams(this._def),
-      schema: this,
-      typeName: ZodFirstPartyTypeKind.ZodEffects,
-      effect: { type: "transform", transform }
-    });
-  }
-  default(def) {
-    const defaultValueFunc = typeof def === "function" ? def : () => def;
-    return new ZodDefault({
-      ...processCreateParams(this._def),
-      innerType: this,
-      defaultValue: defaultValueFunc,
-      typeName: ZodFirstPartyTypeKind.ZodDefault
-    });
-  }
-  brand() {
-    return new ZodBranded({
-      typeName: ZodFirstPartyTypeKind.ZodBranded,
-      type: this,
-      ...processCreateParams(this._def)
-    });
-  }
-  catch(def) {
-    const catchValueFunc = typeof def === "function" ? def : () => def;
-    return new ZodCatch({
-      ...processCreateParams(this._def),
-      innerType: this,
-      catchValue: catchValueFunc,
-      typeName: ZodFirstPartyTypeKind.ZodCatch
-    });
-  }
-  describe(description) {
-    const This = this.constructor;
-    return new This({
-      ...this._def,
-      description
-    });
-  }
-  pipe(target2) {
-    return ZodPipeline.create(this, target2);
-  }
-  readonly() {
-    return ZodReadonly.create(this);
-  }
-  isOptional() {
-    return this.safeParse(void 0).success;
-  }
-  isNullable() {
-    return this.safeParse(null).success;
-  }
-};
-var cuidRegex = /^c[^\s-]{8,}$/i;
-var cuid2Regex = /^[0-9a-z]+$/;
-var ulidRegex = /^[0-9A-HJKMNP-TV-Z]{26}$/i;
-var uuidRegex = /^[0-9a-fA-F]{8}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{12}$/i;
-var nanoidRegex = /^[a-z0-9_-]{21}$/i;
-var jwtRegex = /^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]*$/;
-var durationRegex = /^[-+]?P(?!$)(?:(?:[-+]?\d+Y)|(?:[-+]?\d+[.,]\d+Y$))?(?:(?:[-+]?\d+M)|(?:[-+]?\d+[.,]\d+M$))?(?:(?:[-+]?\d+W)|(?:[-+]?\d+[.,]\d+W$))?(?:(?:[-+]?\d+D)|(?:[-+]?\d+[.,]\d+D$))?(?:T(?=[\d+-])(?:(?:[-+]?\d+H)|(?:[-+]?\d+[.,]\d+H$))?(?:(?:[-+]?\d+M)|(?:[-+]?\d+[.,]\d+M$))?(?:[-+]?\d+(?:[.,]\d+)?S)?)??$/;
-var emailRegex = /^(?!\.)(?!.*\.\.)([A-Z0-9_'+\-\.]*)[A-Z0-9_+-]@([A-Z0-9][A-Z0-9\-]*\.)+[A-Z]{2,}$/i;
-var _emojiRegex = `^(\\p{Extended_Pictographic}|\\p{Emoji_Component})+$`;
-var emojiRegex;
-var ipv4Regex = /^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])$/;
-var ipv4CidrRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\/(3[0-2]|[12]?[0-9])$/;
-var ipv6Regex = /^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))$/;
-var ipv6CidrRegex = /^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))\/(12[0-8]|1[01][0-9]|[1-9]?[0-9])$/;
-var base64Regex = /^([0-9a-zA-Z+/]{4})*(([0-9a-zA-Z+/]{2}==)|([0-9a-zA-Z+/]{3}=))?$/;
-var base64urlRegex = /^([0-9a-zA-Z-_]{4})*(([0-9a-zA-Z-_]{2}(==)?)|([0-9a-zA-Z-_]{3}(=)?))?$/;
-var dateRegexSource = `((\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-((0[13578]|1[02])-(0[1-9]|[12]\\d|3[01])|(0[469]|11)-(0[1-9]|[12]\\d|30)|(02)-(0[1-9]|1\\d|2[0-8])))`;
-var dateRegex = new RegExp(`^${dateRegexSource}$`);
-function timeRegexSource(args2) {
-  let secondsRegexSource = `[0-5]\\d`;
-  if (args2.precision) {
-    secondsRegexSource = `${secondsRegexSource}\\.\\d{${args2.precision}}`;
-  } else if (args2.precision == null) {
-    secondsRegexSource = `${secondsRegexSource}(\\.\\d+)?`;
-  }
-  const secondsQuantifier = args2.precision ? "+" : "?";
-  return `([01]\\d|2[0-3]):[0-5]\\d(:${secondsRegexSource})${secondsQuantifier}`;
-}
-function timeRegex(args2) {
-  return new RegExp(`^${timeRegexSource(args2)}$`);
-}
-function datetimeRegex(args2) {
-  let regex = `${dateRegexSource}T${timeRegexSource(args2)}`;
-  const opts = [];
-  opts.push(args2.local ? `Z?` : `Z`);
-  if (args2.offset)
-    opts.push(`([+-]\\d{2}:?\\d{2})`);
-  regex = `${regex}(${opts.join("|")})`;
-  return new RegExp(`^${regex}$`);
-}
-function isValidIP(ip, version) {
-  if ((version === "v4" || !version) && ipv4Regex.test(ip)) {
-    return true;
-  }
-  if ((version === "v6" || !version) && ipv6Regex.test(ip)) {
-    return true;
-  }
-  return false;
-}
-function isValidJWT(jwt, alg) {
-  if (!jwtRegex.test(jwt))
-    return false;
-  try {
-    const [header] = jwt.split(".");
-    if (!header)
-      return false;
-    const base64 = header.replace(/-/g, "+").replace(/_/g, "/").padEnd(header.length + (4 - header.length % 4) % 4, "=");
-    const decoded = JSON.parse(atob(base64));
-    if (typeof decoded !== "object" || decoded === null)
-      return false;
-    if ("typ" in decoded && (decoded == null ? void 0 : decoded.typ) !== "JWT")
-      return false;
-    if (!decoded.alg)
-      return false;
-    if (alg && decoded.alg !== alg)
-      return false;
-    return true;
-  } catch (e) {
-    return false;
-  }
-}
-function isValidCidr(ip, version) {
-  if ((version === "v4" || !version) && ipv4CidrRegex.test(ip)) {
-    return true;
-  }
-  if ((version === "v6" || !version) && ipv6CidrRegex.test(ip)) {
-    return true;
-  }
-  return false;
-}
-var ZodString = class _ZodString extends ZodType {
-  _parse(input) {
-    if (this._def.coerce) {
-      input.data = String(input.data);
-    }
-    const parsedType = this._getType(input);
-    if (parsedType !== ZodParsedType.string) {
-      const ctx2 = this._getOrReturnCtx(input);
-      addIssueToContext(ctx2, {
-        code: ZodIssueCode.invalid_type,
-        expected: ZodParsedType.string,
-        received: ctx2.parsedType
-      });
-      return INVALID;
-    }
-    const status = new ParseStatus();
-    let ctx = void 0;
-    for (const check of this._def.checks) {
-      if (check.kind === "min") {
-        if (input.data.length < check.value) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            code: ZodIssueCode.too_small,
-            minimum: check.value,
-            type: "string",
-            inclusive: true,
-            exact: false,
-            message: check.message
-          });
-          status.dirty();
-        }
-      } else if (check.kind === "max") {
-        if (input.data.length > check.value) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            code: ZodIssueCode.too_big,
-            maximum: check.value,
-            type: "string",
-            inclusive: true,
-            exact: false,
-            message: check.message
-          });
-          status.dirty();
-        }
-      } else if (check.kind === "length") {
-        const tooBig = input.data.length > check.value;
-        const tooSmall = input.data.length < check.value;
-        if (tooBig || tooSmall) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          if (tooBig) {
-            addIssueToContext(ctx, {
-              code: ZodIssueCode.too_big,
-              maximum: check.value,
-              type: "string",
-              inclusive: true,
-              exact: true,
-              message: check.message
-            });
-          } else if (tooSmall) {
-            addIssueToContext(ctx, {
-              code: ZodIssueCode.too_small,
-              minimum: check.value,
-              type: "string",
-              inclusive: true,
-              exact: true,
-              message: check.message
-            });
-          }
-          status.dirty();
-        }
-      } else if (check.kind === "email") {
-        if (!emailRegex.test(input.data)) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            validation: "email",
-            code: ZodIssueCode.invalid_string,
-            message: check.message
-          });
-          status.dirty();
-        }
-      } else if (check.kind === "emoji") {
-        if (!emojiRegex) {
-          emojiRegex = new RegExp(_emojiRegex, "u");
-        }
-        if (!emojiRegex.test(input.data)) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            validation: "emoji",
-            code: ZodIssueCode.invalid_string,
-            message: check.message
-          });
-          status.dirty();
-        }
-      } else if (check.kind === "uuid") {
-        if (!uuidRegex.test(input.data)) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            validation: "uuid",
-            code: ZodIssueCode.invalid_string,
-            message: check.message
-          });
-          status.dirty();
-        }
-      } else if (check.kind === "nanoid") {
-        if (!nanoidRegex.test(input.data)) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            validation: "nanoid",
-            code: ZodIssueCode.invalid_string,
-            message: check.message
-          });
-          status.dirty();
-        }
-      } else if (check.kind === "cuid") {
-        if (!cuidRegex.test(input.data)) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            validation: "cuid",
-            code: ZodIssueCode.invalid_string,
-            message: check.message
-          });
-          status.dirty();
-        }
-      } else if (check.kind === "cuid2") {
-        if (!cuid2Regex.test(input.data)) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            validation: "cuid2",
-            code: ZodIssueCode.invalid_string,
-            message: check.message
-          });
-          status.dirty();
-        }
-      } else if (check.kind === "ulid") {
-        if (!ulidRegex.test(input.data)) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            validation: "ulid",
-            code: ZodIssueCode.invalid_string,
-            message: check.message
-          });
-          status.dirty();
-        }
-      } else if (check.kind === "url") {
-        try {
-          new URL(input.data);
-        } catch (e) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            validation: "url",
-            code: ZodIssueCode.invalid_string,
-            message: check.message
-          });
-          status.dirty();
-        }
-      } else if (check.kind === "regex") {
-        check.regex.lastIndex = 0;
-        const testResult = check.regex.test(input.data);
-        if (!testResult) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            validation: "regex",
-            code: ZodIssueCode.invalid_string,
-            message: check.message
-          });
-          status.dirty();
-        }
-      } else if (check.kind === "trim") {
-        input.data = input.data.trim();
-      } else if (check.kind === "includes") {
-        if (!input.data.includes(check.value, check.position)) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            code: ZodIssueCode.invalid_string,
-            validation: { includes: check.value, position: check.position },
-            message: check.message
-          });
-          status.dirty();
-        }
-      } else if (check.kind === "toLowerCase") {
-        input.data = input.data.toLowerCase();
-      } else if (check.kind === "toUpperCase") {
-        input.data = input.data.toUpperCase();
-      } else if (check.kind === "startsWith") {
-        if (!input.data.startsWith(check.value)) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            code: ZodIssueCode.invalid_string,
-            validation: { startsWith: check.value },
-            message: check.message
-          });
-          status.dirty();
-        }
-      } else if (check.kind === "endsWith") {
-        if (!input.data.endsWith(check.value)) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            code: ZodIssueCode.invalid_string,
-            validation: { endsWith: check.value },
-            message: check.message
-          });
-          status.dirty();
-        }
-      } else if (check.kind === "datetime") {
-        const regex = datetimeRegex(check);
-        if (!regex.test(input.data)) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            code: ZodIssueCode.invalid_string,
-            validation: "datetime",
-            message: check.message
-          });
-          status.dirty();
-        }
-      } else if (check.kind === "date") {
-        const regex = dateRegex;
-        if (!regex.test(input.data)) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            code: ZodIssueCode.invalid_string,
-            validation: "date",
-            message: check.message
-          });
-          status.dirty();
-        }
-      } else if (check.kind === "time") {
-        const regex = timeRegex(check);
-        if (!regex.test(input.data)) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            code: ZodIssueCode.invalid_string,
-            validation: "time",
-            message: check.message
-          });
-          status.dirty();
-        }
-      } else if (check.kind === "duration") {
-        if (!durationRegex.test(input.data)) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            validation: "duration",
-            code: ZodIssueCode.invalid_string,
-            message: check.message
-          });
-          status.dirty();
-        }
-      } else if (check.kind === "ip") {
-        if (!isValidIP(input.data, check.version)) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            validation: "ip",
-            code: ZodIssueCode.invalid_string,
-            message: check.message
-          });
-          status.dirty();
-        }
-      } else if (check.kind === "jwt") {
-        if (!isValidJWT(input.data, check.alg)) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            validation: "jwt",
-            code: ZodIssueCode.invalid_string,
-            message: check.message
-          });
-          status.dirty();
-        }
-      } else if (check.kind === "cidr") {
-        if (!isValidCidr(input.data, check.version)) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            validation: "cidr",
-            code: ZodIssueCode.invalid_string,
-            message: check.message
-          });
-          status.dirty();
-        }
-      } else if (check.kind === "base64") {
-        if (!base64Regex.test(input.data)) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            validation: "base64",
-            code: ZodIssueCode.invalid_string,
-            message: check.message
-          });
-          status.dirty();
-        }
-      } else if (check.kind === "base64url") {
-        if (!base64urlRegex.test(input.data)) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            validation: "base64url",
-            code: ZodIssueCode.invalid_string,
-            message: check.message
-          });
-          status.dirty();
-        }
-      } else {
-        util.assertNever(check);
-      }
-    }
-    return { status: status.value, value: input.data };
-  }
-  _regex(regex, validation, message) {
-    return this.refinement((data) => regex.test(data), {
-      validation,
-      code: ZodIssueCode.invalid_string,
-      ...errorUtil.errToObj(message)
-    });
-  }
-  _addCheck(check) {
-    return new _ZodString({
-      ...this._def,
-      checks: [...this._def.checks, check]
-    });
-  }
-  email(message) {
-    return this._addCheck({ kind: "email", ...errorUtil.errToObj(message) });
-  }
-  url(message) {
-    return this._addCheck({ kind: "url", ...errorUtil.errToObj(message) });
-  }
-  emoji(message) {
-    return this._addCheck({ kind: "emoji", ...errorUtil.errToObj(message) });
-  }
-  uuid(message) {
-    return this._addCheck({ kind: "uuid", ...errorUtil.errToObj(message) });
-  }
-  nanoid(message) {
-    return this._addCheck({ kind: "nanoid", ...errorUtil.errToObj(message) });
-  }
-  cuid(message) {
-    return this._addCheck({ kind: "cuid", ...errorUtil.errToObj(message) });
-  }
-  cuid2(message) {
-    return this._addCheck({ kind: "cuid2", ...errorUtil.errToObj(message) });
-  }
-  ulid(message) {
-    return this._addCheck({ kind: "ulid", ...errorUtil.errToObj(message) });
-  }
-  base64(message) {
-    return this._addCheck({ kind: "base64", ...errorUtil.errToObj(message) });
-  }
-  base64url(message) {
-    return this._addCheck({
-      kind: "base64url",
-      ...errorUtil.errToObj(message)
-    });
-  }
-  jwt(options) {
-    return this._addCheck({ kind: "jwt", ...errorUtil.errToObj(options) });
-  }
-  ip(options) {
-    return this._addCheck({ kind: "ip", ...errorUtil.errToObj(options) });
-  }
-  cidr(options) {
-    return this._addCheck({ kind: "cidr", ...errorUtil.errToObj(options) });
-  }
-  datetime(options) {
-    var _a, _b;
-    if (typeof options === "string") {
-      return this._addCheck({
-        kind: "datetime",
-        precision: null,
-        offset: false,
-        local: false,
-        message: options
-      });
-    }
-    return this._addCheck({
-      kind: "datetime",
-      precision: typeof (options == null ? void 0 : options.precision) === "undefined" ? null : options == null ? void 0 : options.precision,
-      offset: (_a = options == null ? void 0 : options.offset) != null ? _a : false,
-      local: (_b = options == null ? void 0 : options.local) != null ? _b : false,
-      ...errorUtil.errToObj(options == null ? void 0 : options.message)
-    });
-  }
-  date(message) {
-    return this._addCheck({ kind: "date", message });
-  }
-  time(options) {
-    if (typeof options === "string") {
-      return this._addCheck({
-        kind: "time",
-        precision: null,
-        message: options
-      });
-    }
-    return this._addCheck({
-      kind: "time",
-      precision: typeof (options == null ? void 0 : options.precision) === "undefined" ? null : options == null ? void 0 : options.precision,
-      ...errorUtil.errToObj(options == null ? void 0 : options.message)
-    });
-  }
-  duration(message) {
-    return this._addCheck({ kind: "duration", ...errorUtil.errToObj(message) });
-  }
-  regex(regex, message) {
-    return this._addCheck({
-      kind: "regex",
-      regex,
-      ...errorUtil.errToObj(message)
-    });
-  }
-  includes(value, options) {
-    return this._addCheck({
-      kind: "includes",
-      value,
-      position: options == null ? void 0 : options.position,
-      ...errorUtil.errToObj(options == null ? void 0 : options.message)
-    });
-  }
-  startsWith(value, message) {
-    return this._addCheck({
-      kind: "startsWith",
-      value,
-      ...errorUtil.errToObj(message)
-    });
-  }
-  endsWith(value, message) {
-    return this._addCheck({
-      kind: "endsWith",
-      value,
-      ...errorUtil.errToObj(message)
-    });
-  }
-  min(minLength, message) {
-    return this._addCheck({
-      kind: "min",
-      value: minLength,
-      ...errorUtil.errToObj(message)
-    });
-  }
-  max(maxLength, message) {
-    return this._addCheck({
-      kind: "max",
-      value: maxLength,
-      ...errorUtil.errToObj(message)
-    });
-  }
-  length(len, message) {
-    return this._addCheck({
-      kind: "length",
-      value: len,
-      ...errorUtil.errToObj(message)
-    });
-  }
-  /**
-   * Equivalent to `.min(1)`
-   */
-  nonempty(message) {
-    return this.min(1, errorUtil.errToObj(message));
-  }
-  trim() {
-    return new _ZodString({
-      ...this._def,
-      checks: [...this._def.checks, { kind: "trim" }]
-    });
-  }
-  toLowerCase() {
-    return new _ZodString({
-      ...this._def,
-      checks: [...this._def.checks, { kind: "toLowerCase" }]
-    });
-  }
-  toUpperCase() {
-    return new _ZodString({
-      ...this._def,
-      checks: [...this._def.checks, { kind: "toUpperCase" }]
-    });
-  }
-  get isDatetime() {
-    return !!this._def.checks.find((ch) => ch.kind === "datetime");
-  }
-  get isDate() {
-    return !!this._def.checks.find((ch) => ch.kind === "date");
-  }
-  get isTime() {
-    return !!this._def.checks.find((ch) => ch.kind === "time");
-  }
-  get isDuration() {
-    return !!this._def.checks.find((ch) => ch.kind === "duration");
-  }
-  get isEmail() {
-    return !!this._def.checks.find((ch) => ch.kind === "email");
-  }
-  get isURL() {
-    return !!this._def.checks.find((ch) => ch.kind === "url");
-  }
-  get isEmoji() {
-    return !!this._def.checks.find((ch) => ch.kind === "emoji");
-  }
-  get isUUID() {
-    return !!this._def.checks.find((ch) => ch.kind === "uuid");
-  }
-  get isNANOID() {
-    return !!this._def.checks.find((ch) => ch.kind === "nanoid");
-  }
-  get isCUID() {
-    return !!this._def.checks.find((ch) => ch.kind === "cuid");
-  }
-  get isCUID2() {
-    return !!this._def.checks.find((ch) => ch.kind === "cuid2");
-  }
-  get isULID() {
-    return !!this._def.checks.find((ch) => ch.kind === "ulid");
-  }
-  get isIP() {
-    return !!this._def.checks.find((ch) => ch.kind === "ip");
-  }
-  get isCIDR() {
-    return !!this._def.checks.find((ch) => ch.kind === "cidr");
-  }
-  get isBase64() {
-    return !!this._def.checks.find((ch) => ch.kind === "base64");
-  }
-  get isBase64url() {
-    return !!this._def.checks.find((ch) => ch.kind === "base64url");
-  }
-  get minLength() {
-    let min2 = null;
-    for (const ch of this._def.checks) {
-      if (ch.kind === "min") {
-        if (min2 === null || ch.value > min2)
-          min2 = ch.value;
-      }
-    }
-    return min2;
-  }
-  get maxLength() {
-    let max2 = null;
-    for (const ch of this._def.checks) {
-      if (ch.kind === "max") {
-        if (max2 === null || ch.value < max2)
-          max2 = ch.value;
-      }
-    }
-    return max2;
-  }
-};
-ZodString.create = (params2) => {
-  var _a;
-  return new ZodString({
-    checks: [],
-    typeName: ZodFirstPartyTypeKind.ZodString,
-    coerce: (_a = params2 == null ? void 0 : params2.coerce) != null ? _a : false,
-    ...processCreateParams(params2)
-  });
-};
-function floatSafeRemainder(val, step) {
-  const valDecCount = (val.toString().split(".")[1] || "").length;
-  const stepDecCount = (step.toString().split(".")[1] || "").length;
-  const decCount = valDecCount > stepDecCount ? valDecCount : stepDecCount;
-  const valInt = Number.parseInt(val.toFixed(decCount).replace(".", ""));
-  const stepInt = Number.parseInt(step.toFixed(decCount).replace(".", ""));
-  return valInt % stepInt / 10 ** decCount;
-}
-var ZodNumber = class _ZodNumber extends ZodType {
-  constructor() {
-    super(...arguments);
-    this.min = this.gte;
-    this.max = this.lte;
-    this.step = this.multipleOf;
-  }
-  _parse(input) {
-    if (this._def.coerce) {
-      input.data = Number(input.data);
-    }
-    const parsedType = this._getType(input);
-    if (parsedType !== ZodParsedType.number) {
-      const ctx2 = this._getOrReturnCtx(input);
-      addIssueToContext(ctx2, {
-        code: ZodIssueCode.invalid_type,
-        expected: ZodParsedType.number,
-        received: ctx2.parsedType
-      });
-      return INVALID;
-    }
-    let ctx = void 0;
-    const status = new ParseStatus();
-    for (const check of this._def.checks) {
-      if (check.kind === "int") {
-        if (!util.isInteger(input.data)) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            code: ZodIssueCode.invalid_type,
-            expected: "integer",
-            received: "float",
-            message: check.message
-          });
-          status.dirty();
-        }
-      } else if (check.kind === "min") {
-        const tooSmall = check.inclusive ? input.data < check.value : input.data <= check.value;
-        if (tooSmall) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            code: ZodIssueCode.too_small,
-            minimum: check.value,
-            type: "number",
-            inclusive: check.inclusive,
-            exact: false,
-            message: check.message
-          });
-          status.dirty();
-        }
-      } else if (check.kind === "max") {
-        const tooBig = check.inclusive ? input.data > check.value : input.data >= check.value;
-        if (tooBig) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            code: ZodIssueCode.too_big,
-            maximum: check.value,
-            type: "number",
-            inclusive: check.inclusive,
-            exact: false,
-            message: check.message
-          });
-          status.dirty();
-        }
-      } else if (check.kind === "multipleOf") {
-        if (floatSafeRemainder(input.data, check.value) !== 0) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            code: ZodIssueCode.not_multiple_of,
-            multipleOf: check.value,
-            message: check.message
-          });
-          status.dirty();
-        }
-      } else if (check.kind === "finite") {
-        if (!Number.isFinite(input.data)) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            code: ZodIssueCode.not_finite,
-            message: check.message
-          });
-          status.dirty();
-        }
-      } else {
-        util.assertNever(check);
-      }
-    }
-    return { status: status.value, value: input.data };
-  }
-  gte(value, message) {
-    return this.setLimit("min", value, true, errorUtil.toString(message));
-  }
-  gt(value, message) {
-    return this.setLimit("min", value, false, errorUtil.toString(message));
-  }
-  lte(value, message) {
-    return this.setLimit("max", value, true, errorUtil.toString(message));
-  }
-  lt(value, message) {
-    return this.setLimit("max", value, false, errorUtil.toString(message));
-  }
-  setLimit(kind, value, inclusive, message) {
-    return new _ZodNumber({
-      ...this._def,
-      checks: [
-        ...this._def.checks,
-        {
-          kind,
-          value,
-          inclusive,
-          message: errorUtil.toString(message)
-        }
-      ]
-    });
-  }
-  _addCheck(check) {
-    return new _ZodNumber({
-      ...this._def,
-      checks: [...this._def.checks, check]
-    });
-  }
-  int(message) {
-    return this._addCheck({
-      kind: "int",
-      message: errorUtil.toString(message)
-    });
-  }
-  positive(message) {
-    return this._addCheck({
-      kind: "min",
-      value: 0,
-      inclusive: false,
-      message: errorUtil.toString(message)
-    });
-  }
-  negative(message) {
-    return this._addCheck({
-      kind: "max",
-      value: 0,
-      inclusive: false,
-      message: errorUtil.toString(message)
-    });
-  }
-  nonpositive(message) {
-    return this._addCheck({
-      kind: "max",
-      value: 0,
-      inclusive: true,
-      message: errorUtil.toString(message)
-    });
-  }
-  nonnegative(message) {
-    return this._addCheck({
-      kind: "min",
-      value: 0,
-      inclusive: true,
-      message: errorUtil.toString(message)
-    });
-  }
-  multipleOf(value, message) {
-    return this._addCheck({
-      kind: "multipleOf",
-      value,
-      message: errorUtil.toString(message)
-    });
-  }
-  finite(message) {
-    return this._addCheck({
-      kind: "finite",
-      message: errorUtil.toString(message)
-    });
-  }
-  safe(message) {
-    return this._addCheck({
-      kind: "min",
-      inclusive: true,
-      value: Number.MIN_SAFE_INTEGER,
-      message: errorUtil.toString(message)
-    })._addCheck({
-      kind: "max",
-      inclusive: true,
-      value: Number.MAX_SAFE_INTEGER,
-      message: errorUtil.toString(message)
-    });
-  }
-  get minValue() {
-    let min2 = null;
-    for (const ch of this._def.checks) {
-      if (ch.kind === "min") {
-        if (min2 === null || ch.value > min2)
-          min2 = ch.value;
-      }
-    }
-    return min2;
-  }
-  get maxValue() {
-    let max2 = null;
-    for (const ch of this._def.checks) {
-      if (ch.kind === "max") {
-        if (max2 === null || ch.value < max2)
-          max2 = ch.value;
-      }
-    }
-    return max2;
-  }
-  get isInt() {
-    return !!this._def.checks.find((ch) => ch.kind === "int" || ch.kind === "multipleOf" && util.isInteger(ch.value));
-  }
-  get isFinite() {
-    let max2 = null;
-    let min2 = null;
-    for (const ch of this._def.checks) {
-      if (ch.kind === "finite" || ch.kind === "int" || ch.kind === "multipleOf") {
-        return true;
-      } else if (ch.kind === "min") {
-        if (min2 === null || ch.value > min2)
-          min2 = ch.value;
-      } else if (ch.kind === "max") {
-        if (max2 === null || ch.value < max2)
-          max2 = ch.value;
-      }
-    }
-    return Number.isFinite(min2) && Number.isFinite(max2);
-  }
-};
-ZodNumber.create = (params2) => {
-  return new ZodNumber({
-    checks: [],
-    typeName: ZodFirstPartyTypeKind.ZodNumber,
-    coerce: (params2 == null ? void 0 : params2.coerce) || false,
-    ...processCreateParams(params2)
-  });
-};
-var ZodBigInt = class _ZodBigInt extends ZodType {
-  constructor() {
-    super(...arguments);
-    this.min = this.gte;
-    this.max = this.lte;
-  }
-  _parse(input) {
-    if (this._def.coerce) {
-      try {
-        input.data = BigInt(input.data);
-      } catch (e) {
-        return this._getInvalidInput(input);
-      }
-    }
-    const parsedType = this._getType(input);
-    if (parsedType !== ZodParsedType.bigint) {
-      return this._getInvalidInput(input);
-    }
-    let ctx = void 0;
-    const status = new ParseStatus();
-    for (const check of this._def.checks) {
-      if (check.kind === "min") {
-        const tooSmall = check.inclusive ? input.data < check.value : input.data <= check.value;
-        if (tooSmall) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            code: ZodIssueCode.too_small,
-            type: "bigint",
-            minimum: check.value,
-            inclusive: check.inclusive,
-            message: check.message
-          });
-          status.dirty();
-        }
-      } else if (check.kind === "max") {
-        const tooBig = check.inclusive ? input.data > check.value : input.data >= check.value;
-        if (tooBig) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            code: ZodIssueCode.too_big,
-            type: "bigint",
-            maximum: check.value,
-            inclusive: check.inclusive,
-            message: check.message
-          });
-          status.dirty();
-        }
-      } else if (check.kind === "multipleOf") {
-        if (input.data % check.value !== BigInt(0)) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            code: ZodIssueCode.not_multiple_of,
-            multipleOf: check.value,
-            message: check.message
-          });
-          status.dirty();
-        }
-      } else {
-        util.assertNever(check);
-      }
-    }
-    return { status: status.value, value: input.data };
-  }
-  _getInvalidInput(input) {
-    const ctx = this._getOrReturnCtx(input);
-    addIssueToContext(ctx, {
-      code: ZodIssueCode.invalid_type,
-      expected: ZodParsedType.bigint,
-      received: ctx.parsedType
-    });
-    return INVALID;
-  }
-  gte(value, message) {
-    return this.setLimit("min", value, true, errorUtil.toString(message));
-  }
-  gt(value, message) {
-    return this.setLimit("min", value, false, errorUtil.toString(message));
-  }
-  lte(value, message) {
-    return this.setLimit("max", value, true, errorUtil.toString(message));
-  }
-  lt(value, message) {
-    return this.setLimit("max", value, false, errorUtil.toString(message));
-  }
-  setLimit(kind, value, inclusive, message) {
-    return new _ZodBigInt({
-      ...this._def,
-      checks: [
-        ...this._def.checks,
-        {
-          kind,
-          value,
-          inclusive,
-          message: errorUtil.toString(message)
-        }
-      ]
-    });
-  }
-  _addCheck(check) {
-    return new _ZodBigInt({
-      ...this._def,
-      checks: [...this._def.checks, check]
-    });
-  }
-  positive(message) {
-    return this._addCheck({
-      kind: "min",
-      value: BigInt(0),
-      inclusive: false,
-      message: errorUtil.toString(message)
-    });
-  }
-  negative(message) {
-    return this._addCheck({
-      kind: "max",
-      value: BigInt(0),
-      inclusive: false,
-      message: errorUtil.toString(message)
-    });
-  }
-  nonpositive(message) {
-    return this._addCheck({
-      kind: "max",
-      value: BigInt(0),
-      inclusive: true,
-      message: errorUtil.toString(message)
-    });
-  }
-  nonnegative(message) {
-    return this._addCheck({
-      kind: "min",
-      value: BigInt(0),
-      inclusive: true,
-      message: errorUtil.toString(message)
-    });
-  }
-  multipleOf(value, message) {
-    return this._addCheck({
-      kind: "multipleOf",
-      value,
-      message: errorUtil.toString(message)
-    });
-  }
-  get minValue() {
-    let min2 = null;
-    for (const ch of this._def.checks) {
-      if (ch.kind === "min") {
-        if (min2 === null || ch.value > min2)
-          min2 = ch.value;
-      }
-    }
-    return min2;
-  }
-  get maxValue() {
-    let max2 = null;
-    for (const ch of this._def.checks) {
-      if (ch.kind === "max") {
-        if (max2 === null || ch.value < max2)
-          max2 = ch.value;
-      }
-    }
-    return max2;
-  }
-};
-ZodBigInt.create = (params2) => {
-  var _a;
-  return new ZodBigInt({
-    checks: [],
-    typeName: ZodFirstPartyTypeKind.ZodBigInt,
-    coerce: (_a = params2 == null ? void 0 : params2.coerce) != null ? _a : false,
-    ...processCreateParams(params2)
-  });
-};
-var ZodBoolean = class extends ZodType {
-  _parse(input) {
-    if (this._def.coerce) {
-      input.data = Boolean(input.data);
-    }
-    const parsedType = this._getType(input);
-    if (parsedType !== ZodParsedType.boolean) {
-      const ctx = this._getOrReturnCtx(input);
-      addIssueToContext(ctx, {
-        code: ZodIssueCode.invalid_type,
-        expected: ZodParsedType.boolean,
-        received: ctx.parsedType
-      });
-      return INVALID;
-    }
-    return OK(input.data);
-  }
-};
-ZodBoolean.create = (params2) => {
-  return new ZodBoolean({
-    typeName: ZodFirstPartyTypeKind.ZodBoolean,
-    coerce: (params2 == null ? void 0 : params2.coerce) || false,
-    ...processCreateParams(params2)
-  });
-};
-var ZodDate = class _ZodDate extends ZodType {
-  _parse(input) {
-    if (this._def.coerce) {
-      input.data = new Date(input.data);
-    }
-    const parsedType = this._getType(input);
-    if (parsedType !== ZodParsedType.date) {
-      const ctx2 = this._getOrReturnCtx(input);
-      addIssueToContext(ctx2, {
-        code: ZodIssueCode.invalid_type,
-        expected: ZodParsedType.date,
-        received: ctx2.parsedType
-      });
-      return INVALID;
-    }
-    if (Number.isNaN(input.data.getTime())) {
-      const ctx2 = this._getOrReturnCtx(input);
-      addIssueToContext(ctx2, {
-        code: ZodIssueCode.invalid_date
-      });
-      return INVALID;
-    }
-    const status = new ParseStatus();
-    let ctx = void 0;
-    for (const check of this._def.checks) {
-      if (check.kind === "min") {
-        if (input.data.getTime() < check.value) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            code: ZodIssueCode.too_small,
-            message: check.message,
-            inclusive: true,
-            exact: false,
-            minimum: check.value,
-            type: "date"
-          });
-          status.dirty();
-        }
-      } else if (check.kind === "max") {
-        if (input.data.getTime() > check.value) {
-          ctx = this._getOrReturnCtx(input, ctx);
-          addIssueToContext(ctx, {
-            code: ZodIssueCode.too_big,
-            message: check.message,
-            inclusive: true,
-            exact: false,
-            maximum: check.value,
-            type: "date"
-          });
-          status.dirty();
-        }
-      } else {
-        util.assertNever(check);
-      }
-    }
-    return {
-      status: status.value,
-      value: new Date(input.data.getTime())
-    };
-  }
-  _addCheck(check) {
-    return new _ZodDate({
-      ...this._def,
-      checks: [...this._def.checks, check]
-    });
-  }
-  min(minDate, message) {
-    return this._addCheck({
-      kind: "min",
-      value: minDate.getTime(),
-      message: errorUtil.toString(message)
-    });
-  }
-  max(maxDate, message) {
-    return this._addCheck({
-      kind: "max",
-      value: maxDate.getTime(),
-      message: errorUtil.toString(message)
-    });
-  }
-  get minDate() {
-    let min2 = null;
-    for (const ch of this._def.checks) {
-      if (ch.kind === "min") {
-        if (min2 === null || ch.value > min2)
-          min2 = ch.value;
-      }
-    }
-    return min2 != null ? new Date(min2) : null;
-  }
-  get maxDate() {
-    let max2 = null;
-    for (const ch of this._def.checks) {
-      if (ch.kind === "max") {
-        if (max2 === null || ch.value < max2)
-          max2 = ch.value;
-      }
-    }
-    return max2 != null ? new Date(max2) : null;
-  }
-};
-ZodDate.create = (params2) => {
-  return new ZodDate({
-    checks: [],
-    coerce: (params2 == null ? void 0 : params2.coerce) || false,
-    typeName: ZodFirstPartyTypeKind.ZodDate,
-    ...processCreateParams(params2)
-  });
-};
-var ZodSymbol = class extends ZodType {
-  _parse(input) {
-    const parsedType = this._getType(input);
-    if (parsedType !== ZodParsedType.symbol) {
-      const ctx = this._getOrReturnCtx(input);
-      addIssueToContext(ctx, {
-        code: ZodIssueCode.invalid_type,
-        expected: ZodParsedType.symbol,
-        received: ctx.parsedType
-      });
-      return INVALID;
-    }
-    return OK(input.data);
-  }
-};
-ZodSymbol.create = (params2) => {
-  return new ZodSymbol({
-    typeName: ZodFirstPartyTypeKind.ZodSymbol,
-    ...processCreateParams(params2)
-  });
-};
-var ZodUndefined = class extends ZodType {
-  _parse(input) {
-    const parsedType = this._getType(input);
-    if (parsedType !== ZodParsedType.undefined) {
-      const ctx = this._getOrReturnCtx(input);
-      addIssueToContext(ctx, {
-        code: ZodIssueCode.invalid_type,
-        expected: ZodParsedType.undefined,
-        received: ctx.parsedType
-      });
-      return INVALID;
-    }
-    return OK(input.data);
-  }
-};
-ZodUndefined.create = (params2) => {
-  return new ZodUndefined({
-    typeName: ZodFirstPartyTypeKind.ZodUndefined,
-    ...processCreateParams(params2)
-  });
-};
-var ZodNull = class extends ZodType {
-  _parse(input) {
-    const parsedType = this._getType(input);
-    if (parsedType !== ZodParsedType.null) {
-      const ctx = this._getOrReturnCtx(input);
-      addIssueToContext(ctx, {
-        code: ZodIssueCode.invalid_type,
-        expected: ZodParsedType.null,
-        received: ctx.parsedType
-      });
-      return INVALID;
-    }
-    return OK(input.data);
-  }
-};
-ZodNull.create = (params2) => {
-  return new ZodNull({
-    typeName: ZodFirstPartyTypeKind.ZodNull,
-    ...processCreateParams(params2)
-  });
-};
-var ZodAny = class extends ZodType {
-  constructor() {
-    super(...arguments);
-    this._any = true;
-  }
-  _parse(input) {
-    return OK(input.data);
-  }
-};
-ZodAny.create = (params2) => {
-  return new ZodAny({
-    typeName: ZodFirstPartyTypeKind.ZodAny,
-    ...processCreateParams(params2)
-  });
-};
-var ZodUnknown = class extends ZodType {
-  constructor() {
-    super(...arguments);
-    this._unknown = true;
-  }
-  _parse(input) {
-    return OK(input.data);
-  }
-};
-ZodUnknown.create = (params2) => {
-  return new ZodUnknown({
-    typeName: ZodFirstPartyTypeKind.ZodUnknown,
-    ...processCreateParams(params2)
-  });
-};
-var ZodNever = class extends ZodType {
-  _parse(input) {
-    const ctx = this._getOrReturnCtx(input);
-    addIssueToContext(ctx, {
-      code: ZodIssueCode.invalid_type,
-      expected: ZodParsedType.never,
-      received: ctx.parsedType
-    });
-    return INVALID;
-  }
-};
-ZodNever.create = (params2) => {
-  return new ZodNever({
-    typeName: ZodFirstPartyTypeKind.ZodNever,
-    ...processCreateParams(params2)
-  });
-};
-var ZodVoid = class extends ZodType {
-  _parse(input) {
-    const parsedType = this._getType(input);
-    if (parsedType !== ZodParsedType.undefined) {
-      const ctx = this._getOrReturnCtx(input);
-      addIssueToContext(ctx, {
-        code: ZodIssueCode.invalid_type,
-        expected: ZodParsedType.void,
-        received: ctx.parsedType
-      });
-      return INVALID;
-    }
-    return OK(input.data);
-  }
-};
-ZodVoid.create = (params2) => {
-  return new ZodVoid({
-    typeName: ZodFirstPartyTypeKind.ZodVoid,
-    ...processCreateParams(params2)
-  });
-};
-var ZodArray = class _ZodArray extends ZodType {
-  _parse(input) {
-    const { ctx, status } = this._processInputParams(input);
-    const def = this._def;
-    if (ctx.parsedType !== ZodParsedType.array) {
-      addIssueToContext(ctx, {
-        code: ZodIssueCode.invalid_type,
-        expected: ZodParsedType.array,
-        received: ctx.parsedType
-      });
-      return INVALID;
-    }
-    if (def.exactLength !== null) {
-      const tooBig = ctx.data.length > def.exactLength.value;
-      const tooSmall = ctx.data.length < def.exactLength.value;
-      if (tooBig || tooSmall) {
-        addIssueToContext(ctx, {
-          code: tooBig ? ZodIssueCode.too_big : ZodIssueCode.too_small,
-          minimum: tooSmall ? def.exactLength.value : void 0,
-          maximum: tooBig ? def.exactLength.value : void 0,
-          type: "array",
-          inclusive: true,
-          exact: true,
-          message: def.exactLength.message
-        });
-        status.dirty();
-      }
-    }
-    if (def.minLength !== null) {
-      if (ctx.data.length < def.minLength.value) {
-        addIssueToContext(ctx, {
-          code: ZodIssueCode.too_small,
-          minimum: def.minLength.value,
-          type: "array",
-          inclusive: true,
-          exact: false,
-          message: def.minLength.message
-        });
-        status.dirty();
-      }
-    }
-    if (def.maxLength !== null) {
-      if (ctx.data.length > def.maxLength.value) {
-        addIssueToContext(ctx, {
-          code: ZodIssueCode.too_big,
-          maximum: def.maxLength.value,
-          type: "array",
-          inclusive: true,
-          exact: false,
-          message: def.maxLength.message
-        });
-        status.dirty();
-      }
-    }
-    if (ctx.common.async) {
-      return Promise.all([...ctx.data].map((item, i) => {
-        return def.type._parseAsync(new ParseInputLazyPath(ctx, item, ctx.path, i));
-      })).then((result2) => {
-        return ParseStatus.mergeArray(status, result2);
-      });
-    }
-    const result = [...ctx.data].map((item, i) => {
-      return def.type._parseSync(new ParseInputLazyPath(ctx, item, ctx.path, i));
-    });
-    return ParseStatus.mergeArray(status, result);
-  }
-  get element() {
-    return this._def.type;
-  }
-  min(minLength, message) {
-    return new _ZodArray({
-      ...this._def,
-      minLength: { value: minLength, message: errorUtil.toString(message) }
-    });
-  }
-  max(maxLength, message) {
-    return new _ZodArray({
-      ...this._def,
-      maxLength: { value: maxLength, message: errorUtil.toString(message) }
-    });
-  }
-  length(len, message) {
-    return new _ZodArray({
-      ...this._def,
-      exactLength: { value: len, message: errorUtil.toString(message) }
-    });
-  }
-  nonempty(message) {
-    return this.min(1, message);
-  }
-};
-ZodArray.create = (schema, params2) => {
-  return new ZodArray({
-    type: schema,
-    minLength: null,
-    maxLength: null,
-    exactLength: null,
-    typeName: ZodFirstPartyTypeKind.ZodArray,
-    ...processCreateParams(params2)
-  });
-};
-function deepPartialify(schema) {
-  if (schema instanceof ZodObject) {
-    const newShape = {};
-    for (const key in schema.shape) {
-      const fieldSchema = schema.shape[key];
-      newShape[key] = ZodOptional.create(deepPartialify(fieldSchema));
-    }
-    return new ZodObject({
-      ...schema._def,
-      shape: () => newShape
-    });
-  } else if (schema instanceof ZodArray) {
-    return new ZodArray({
-      ...schema._def,
-      type: deepPartialify(schema.element)
-    });
-  } else if (schema instanceof ZodOptional) {
-    return ZodOptional.create(deepPartialify(schema.unwrap()));
-  } else if (schema instanceof ZodNullable) {
-    return ZodNullable.create(deepPartialify(schema.unwrap()));
-  } else if (schema instanceof ZodTuple) {
-    return ZodTuple.create(schema.items.map((item) => deepPartialify(item)));
-  } else {
-    return schema;
-  }
-}
-var ZodObject = class _ZodObject extends ZodType {
-  constructor() {
-    super(...arguments);
-    this._cached = null;
-    this.nonstrict = this.passthrough;
-    this.augment = this.extend;
-  }
-  _getCached() {
-    if (this._cached !== null)
-      return this._cached;
-    const shape = this._def.shape();
-    const keys2 = util.objectKeys(shape);
-    this._cached = { shape, keys: keys2 };
-    return this._cached;
-  }
-  _parse(input) {
-    const parsedType = this._getType(input);
-    if (parsedType !== ZodParsedType.object) {
-      const ctx2 = this._getOrReturnCtx(input);
-      addIssueToContext(ctx2, {
-        code: ZodIssueCode.invalid_type,
-        expected: ZodParsedType.object,
-        received: ctx2.parsedType
-      });
-      return INVALID;
-    }
-    const { status, ctx } = this._processInputParams(input);
-    const { shape, keys: shapeKeys } = this._getCached();
-    const extraKeys = [];
-    if (!(this._def.catchall instanceof ZodNever && this._def.unknownKeys === "strip")) {
-      for (const key in ctx.data) {
-        if (!shapeKeys.includes(key)) {
-          extraKeys.push(key);
-        }
-      }
-    }
-    const pairs = [];
-    for (const key of shapeKeys) {
-      const keyValidator = shape[key];
-      const value = ctx.data[key];
-      pairs.push({
-        key: { status: "valid", value: key },
-        value: keyValidator._parse(new ParseInputLazyPath(ctx, value, ctx.path, key)),
-        alwaysSet: key in ctx.data
-      });
-    }
-    if (this._def.catchall instanceof ZodNever) {
-      const unknownKeys = this._def.unknownKeys;
-      if (unknownKeys === "passthrough") {
-        for (const key of extraKeys) {
-          pairs.push({
-            key: { status: "valid", value: key },
-            value: { status: "valid", value: ctx.data[key] }
-          });
-        }
-      } else if (unknownKeys === "strict") {
-        if (extraKeys.length > 0) {
-          addIssueToContext(ctx, {
-            code: ZodIssueCode.unrecognized_keys,
-            keys: extraKeys
-          });
-          status.dirty();
-        }
-      } else if (unknownKeys === "strip") {
-      } else {
-        throw new Error(`Internal ZodObject error: invalid unknownKeys value.`);
-      }
-    } else {
-      const catchall = this._def.catchall;
-      for (const key of extraKeys) {
-        const value = ctx.data[key];
-        pairs.push({
-          key: { status: "valid", value: key },
-          value: catchall._parse(
-            new ParseInputLazyPath(ctx, value, ctx.path, key)
-            //, ctx.child(key), value, getParsedType(value)
-          ),
-          alwaysSet: key in ctx.data
-        });
-      }
-    }
-    if (ctx.common.async) {
-      return Promise.resolve().then(async () => {
-        const syncPairs = [];
-        for (const pair of pairs) {
-          const key = await pair.key;
-          const value = await pair.value;
-          syncPairs.push({
-            key,
-            value,
-            alwaysSet: pair.alwaysSet
-          });
-        }
-        return syncPairs;
-      }).then((syncPairs) => {
-        return ParseStatus.mergeObjectSync(status, syncPairs);
-      });
-    } else {
-      return ParseStatus.mergeObjectSync(status, pairs);
-    }
-  }
-  get shape() {
-    return this._def.shape();
-  }
-  strict(message) {
-    errorUtil.errToObj;
-    return new _ZodObject({
-      ...this._def,
-      unknownKeys: "strict",
-      ...message !== void 0 ? {
-        errorMap: (issue, ctx) => {
-          var _a, _b, _c, _d;
-          const defaultError = (_c = (_b = (_a = this._def).errorMap) == null ? void 0 : _b.call(_a, issue, ctx).message) != null ? _c : ctx.defaultError;
-          if (issue.code === "unrecognized_keys")
-            return {
-              message: (_d = errorUtil.errToObj(message).message) != null ? _d : defaultError
-            };
-          return {
-            message: defaultError
-          };
-        }
-      } : {}
-    });
-  }
-  strip() {
-    return new _ZodObject({
-      ...this._def,
-      unknownKeys: "strip"
-    });
-  }
-  passthrough() {
-    return new _ZodObject({
-      ...this._def,
-      unknownKeys: "passthrough"
-    });
-  }
-  // const AugmentFactory =
-  //   <Def extends ZodObjectDef>(def: Def) =>
-  //   <Augmentation extends ZodRawShape>(
-  //     augmentation: Augmentation
-  //   ): ZodObject<
-  //     extendShape<ReturnType<Def["shape"]>, Augmentation>,
-  //     Def["unknownKeys"],
-  //     Def["catchall"]
-  //   > => {
-  //     return new ZodObject({
-  //       ...def,
-  //       shape: () => ({
-  //         ...def.shape(),
-  //         ...augmentation,
-  //       }),
-  //     }) as any;
-  //   };
-  extend(augmentation) {
-    return new _ZodObject({
-      ...this._def,
-      shape: () => ({
-        ...this._def.shape(),
-        ...augmentation
-      })
-    });
-  }
-  /**
-   * Prior to zod@1.0.12 there was a bug in the
-   * inferred type of merged objects. Please
-   * upgrade if you are experiencing issues.
-   */
-  merge(merging) {
-    const merged = new _ZodObject({
-      unknownKeys: merging._def.unknownKeys,
-      catchall: merging._def.catchall,
-      shape: () => ({
-        ...this._def.shape(),
-        ...merging._def.shape()
-      }),
-      typeName: ZodFirstPartyTypeKind.ZodObject
-    });
-    return merged;
-  }
-  // merge<
-  //   Incoming extends AnyZodObject,
-  //   Augmentation extends Incoming["shape"],
-  //   NewOutput extends {
-  //     [k in keyof Augmentation | keyof Output]: k extends keyof Augmentation
-  //       ? Augmentation[k]["_output"]
-  //       : k extends keyof Output
-  //       ? Output[k]
-  //       : never;
-  //   },
-  //   NewInput extends {
-  //     [k in keyof Augmentation | keyof Input]: k extends keyof Augmentation
-  //       ? Augmentation[k]["_input"]
-  //       : k extends keyof Input
-  //       ? Input[k]
-  //       : never;
-  //   }
-  // >(
-  //   merging: Incoming
-  // ): ZodObject<
-  //   extendShape<T, ReturnType<Incoming["_def"]["shape"]>>,
-  //   Incoming["_def"]["unknownKeys"],
-  //   Incoming["_def"]["catchall"],
-  //   NewOutput,
-  //   NewInput
-  // > {
-  //   const merged: any = new ZodObject({
-  //     unknownKeys: merging._def.unknownKeys,
-  //     catchall: merging._def.catchall,
-  //     shape: () =>
-  //       objectUtil.mergeShapes(this._def.shape(), merging._def.shape()),
-  //     typeName: ZodFirstPartyTypeKind.ZodObject,
-  //   }) as any;
-  //   return merged;
-  // }
-  setKey(key, schema) {
-    return this.augment({ [key]: schema });
-  }
-  // merge<Incoming extends AnyZodObject>(
-  //   merging: Incoming
-  // ): //ZodObject<T & Incoming["_shape"], UnknownKeys, Catchall> = (merging) => {
-  // ZodObject<
-  //   extendShape<T, ReturnType<Incoming["_def"]["shape"]>>,
-  //   Incoming["_def"]["unknownKeys"],
-  //   Incoming["_def"]["catchall"]
-  // > {
-  //   // const mergedShape = objectUtil.mergeShapes(
-  //   //   this._def.shape(),
-  //   //   merging._def.shape()
-  //   // );
-  //   const merged: any = new ZodObject({
-  //     unknownKeys: merging._def.unknownKeys,
-  //     catchall: merging._def.catchall,
-  //     shape: () =>
-  //       objectUtil.mergeShapes(this._def.shape(), merging._def.shape()),
-  //     typeName: ZodFirstPartyTypeKind.ZodObject,
-  //   }) as any;
-  //   return merged;
-  // }
-  catchall(index2) {
-    return new _ZodObject({
-      ...this._def,
-      catchall: index2
-    });
-  }
-  pick(mask) {
-    const shape = {};
-    for (const key of util.objectKeys(mask)) {
-      if (mask[key] && this.shape[key]) {
-        shape[key] = this.shape[key];
-      }
-    }
-    return new _ZodObject({
-      ...this._def,
-      shape: () => shape
-    });
-  }
-  omit(mask) {
-    const shape = {};
-    for (const key of util.objectKeys(this.shape)) {
-      if (!mask[key]) {
-        shape[key] = this.shape[key];
-      }
-    }
-    return new _ZodObject({
-      ...this._def,
-      shape: () => shape
-    });
-  }
-  /**
-   * @deprecated
-   */
-  deepPartial() {
-    return deepPartialify(this);
-  }
-  partial(mask) {
-    const newShape = {};
-    for (const key of util.objectKeys(this.shape)) {
-      const fieldSchema = this.shape[key];
-      if (mask && !mask[key]) {
-        newShape[key] = fieldSchema;
-      } else {
-        newShape[key] = fieldSchema.optional();
-      }
-    }
-    return new _ZodObject({
-      ...this._def,
-      shape: () => newShape
-    });
-  }
-  required(mask) {
-    const newShape = {};
-    for (const key of util.objectKeys(this.shape)) {
-      if (mask && !mask[key]) {
-        newShape[key] = this.shape[key];
-      } else {
-        const fieldSchema = this.shape[key];
-        let newField = fieldSchema;
-        while (newField instanceof ZodOptional) {
-          newField = newField._def.innerType;
-        }
-        newShape[key] = newField;
-      }
-    }
-    return new _ZodObject({
-      ...this._def,
-      shape: () => newShape
-    });
-  }
-  keyof() {
-    return createZodEnum(util.objectKeys(this.shape));
-  }
-};
-ZodObject.create = (shape, params2) => {
-  return new ZodObject({
-    shape: () => shape,
-    unknownKeys: "strip",
-    catchall: ZodNever.create(),
-    typeName: ZodFirstPartyTypeKind.ZodObject,
-    ...processCreateParams(params2)
-  });
-};
-ZodObject.strictCreate = (shape, params2) => {
-  return new ZodObject({
-    shape: () => shape,
-    unknownKeys: "strict",
-    catchall: ZodNever.create(),
-    typeName: ZodFirstPartyTypeKind.ZodObject,
-    ...processCreateParams(params2)
-  });
-};
-ZodObject.lazycreate = (shape, params2) => {
-  return new ZodObject({
-    shape,
-    unknownKeys: "strip",
-    catchall: ZodNever.create(),
-    typeName: ZodFirstPartyTypeKind.ZodObject,
-    ...processCreateParams(params2)
-  });
-};
-var ZodUnion = class extends ZodType {
-  _parse(input) {
-    const { ctx } = this._processInputParams(input);
-    const options = this._def.options;
-    function handleResults(results) {
-      for (const result of results) {
-        if (result.result.status === "valid") {
-          return result.result;
-        }
-      }
-      for (const result of results) {
-        if (result.result.status === "dirty") {
-          ctx.common.issues.push(...result.ctx.common.issues);
-          return result.result;
-        }
-      }
-      const unionErrors = results.map((result) => new ZodError(result.ctx.common.issues));
-      addIssueToContext(ctx, {
-        code: ZodIssueCode.invalid_union,
-        unionErrors
-      });
-      return INVALID;
-    }
-    if (ctx.common.async) {
-      return Promise.all(options.map(async (option) => {
-        const childCtx = {
-          ...ctx,
-          common: {
-            ...ctx.common,
-            issues: []
-          },
-          parent: null
-        };
-        return {
-          result: await option._parseAsync({
-            data: ctx.data,
-            path: ctx.path,
-            parent: childCtx
-          }),
-          ctx: childCtx
-        };
-      })).then(handleResults);
-    } else {
-      let dirty = void 0;
-      const issues = [];
-      for (const option of options) {
-        const childCtx = {
-          ...ctx,
-          common: {
-            ...ctx.common,
-            issues: []
-          },
-          parent: null
-        };
-        const result = option._parseSync({
-          data: ctx.data,
-          path: ctx.path,
-          parent: childCtx
-        });
-        if (result.status === "valid") {
-          return result;
-        } else if (result.status === "dirty" && !dirty) {
-          dirty = { result, ctx: childCtx };
-        }
-        if (childCtx.common.issues.length) {
-          issues.push(childCtx.common.issues);
-        }
-      }
-      if (dirty) {
-        ctx.common.issues.push(...dirty.ctx.common.issues);
-        return dirty.result;
-      }
-      const unionErrors = issues.map((issues2) => new ZodError(issues2));
-      addIssueToContext(ctx, {
-        code: ZodIssueCode.invalid_union,
-        unionErrors
-      });
-      return INVALID;
-    }
-  }
-  get options() {
-    return this._def.options;
-  }
-};
-ZodUnion.create = (types, params2) => {
-  return new ZodUnion({
-    options: types,
-    typeName: ZodFirstPartyTypeKind.ZodUnion,
-    ...processCreateParams(params2)
-  });
-};
-var getDiscriminator = (type) => {
-  if (type instanceof ZodLazy) {
-    return getDiscriminator(type.schema);
-  } else if (type instanceof ZodEffects) {
-    return getDiscriminator(type.innerType());
-  } else if (type instanceof ZodLiteral) {
-    return [type.value];
-  } else if (type instanceof ZodEnum) {
-    return type.options;
-  } else if (type instanceof ZodNativeEnum) {
-    return util.objectValues(type.enum);
-  } else if (type instanceof ZodDefault) {
-    return getDiscriminator(type._def.innerType);
-  } else if (type instanceof ZodUndefined) {
-    return [void 0];
-  } else if (type instanceof ZodNull) {
-    return [null];
-  } else if (type instanceof ZodOptional) {
-    return [void 0, ...getDiscriminator(type.unwrap())];
-  } else if (type instanceof ZodNullable) {
-    return [null, ...getDiscriminator(type.unwrap())];
-  } else if (type instanceof ZodBranded) {
-    return getDiscriminator(type.unwrap());
-  } else if (type instanceof ZodReadonly) {
-    return getDiscriminator(type.unwrap());
-  } else if (type instanceof ZodCatch) {
-    return getDiscriminator(type._def.innerType);
-  } else {
-    return [];
-  }
-};
-var ZodDiscriminatedUnion = class _ZodDiscriminatedUnion extends ZodType {
-  _parse(input) {
-    const { ctx } = this._processInputParams(input);
-    if (ctx.parsedType !== ZodParsedType.object) {
-      addIssueToContext(ctx, {
-        code: ZodIssueCode.invalid_type,
-        expected: ZodParsedType.object,
-        received: ctx.parsedType
-      });
-      return INVALID;
-    }
-    const discriminator = this.discriminator;
-    const discriminatorValue = ctx.data[discriminator];
-    const option = this.optionsMap.get(discriminatorValue);
-    if (!option) {
-      addIssueToContext(ctx, {
-        code: ZodIssueCode.invalid_union_discriminator,
-        options: Array.from(this.optionsMap.keys()),
-        path: [discriminator]
-      });
-      return INVALID;
-    }
-    if (ctx.common.async) {
-      return option._parseAsync({
-        data: ctx.data,
-        path: ctx.path,
-        parent: ctx
-      });
-    } else {
-      return option._parseSync({
-        data: ctx.data,
-        path: ctx.path,
-        parent: ctx
-      });
-    }
-  }
-  get discriminator() {
-    return this._def.discriminator;
-  }
-  get options() {
-    return this._def.options;
-  }
-  get optionsMap() {
-    return this._def.optionsMap;
-  }
-  /**
-   * The constructor of the discriminated union schema. Its behaviour is very similar to that of the normal z.union() constructor.
-   * However, it only allows a union of objects, all of which need to share a discriminator property. This property must
-   * have a different value for each object in the union.
-   * @param discriminator the name of the discriminator property
-   * @param types an array of object schemas
-   * @param params
-   */
-  static create(discriminator, options, params2) {
-    const optionsMap = /* @__PURE__ */ new Map();
-    for (const type of options) {
-      const discriminatorValues = getDiscriminator(type.shape[discriminator]);
-      if (!discriminatorValues.length) {
-        throw new Error(`A discriminator value for key \`${discriminator}\` could not be extracted from all schema options`);
-      }
-      for (const value of discriminatorValues) {
-        if (optionsMap.has(value)) {
-          throw new Error(`Discriminator property ${String(discriminator)} has duplicate value ${String(value)}`);
-        }
-        optionsMap.set(value, type);
-      }
-    }
-    return new _ZodDiscriminatedUnion({
-      typeName: ZodFirstPartyTypeKind.ZodDiscriminatedUnion,
-      discriminator,
-      options,
-      optionsMap,
-      ...processCreateParams(params2)
-    });
-  }
-};
-function mergeValues(a, b) {
-  const aType = getParsedType(a);
-  const bType = getParsedType(b);
-  if (a === b) {
-    return { valid: true, data: a };
-  } else if (aType === ZodParsedType.object && bType === ZodParsedType.object) {
-    const bKeys = util.objectKeys(b);
-    const sharedKeys = util.objectKeys(a).filter((key) => bKeys.indexOf(key) !== -1);
-    const newObj = { ...a, ...b };
-    for (const key of sharedKeys) {
-      const sharedValue = mergeValues(a[key], b[key]);
-      if (!sharedValue.valid) {
-        return { valid: false };
-      }
-      newObj[key] = sharedValue.data;
-    }
-    return { valid: true, data: newObj };
-  } else if (aType === ZodParsedType.array && bType === ZodParsedType.array) {
-    if (a.length !== b.length) {
-      return { valid: false };
-    }
-    const newArray = [];
-    for (let index2 = 0; index2 < a.length; index2++) {
-      const itemA = a[index2];
-      const itemB = b[index2];
-      const sharedValue = mergeValues(itemA, itemB);
-      if (!sharedValue.valid) {
-        return { valid: false };
-      }
-      newArray.push(sharedValue.data);
-    }
-    return { valid: true, data: newArray };
-  } else if (aType === ZodParsedType.date && bType === ZodParsedType.date && +a === +b) {
-    return { valid: true, data: a };
-  } else {
-    return { valid: false };
-  }
-}
-var ZodIntersection = class extends ZodType {
-  _parse(input) {
-    const { status, ctx } = this._processInputParams(input);
-    const handleParsed = (parsedLeft, parsedRight) => {
-      if (isAborted(parsedLeft) || isAborted(parsedRight)) {
-        return INVALID;
-      }
-      const merged = mergeValues(parsedLeft.value, parsedRight.value);
-      if (!merged.valid) {
-        addIssueToContext(ctx, {
-          code: ZodIssueCode.invalid_intersection_types
-        });
-        return INVALID;
-      }
-      if (isDirty(parsedLeft) || isDirty(parsedRight)) {
-        status.dirty();
-      }
-      return { status: status.value, value: merged.data };
-    };
-    if (ctx.common.async) {
-      return Promise.all([
-        this._def.left._parseAsync({
-          data: ctx.data,
-          path: ctx.path,
-          parent: ctx
-        }),
-        this._def.right._parseAsync({
-          data: ctx.data,
-          path: ctx.path,
-          parent: ctx
-        })
-      ]).then(([left, right]) => handleParsed(left, right));
-    } else {
-      return handleParsed(this._def.left._parseSync({
-        data: ctx.data,
-        path: ctx.path,
-        parent: ctx
-      }), this._def.right._parseSync({
-        data: ctx.data,
-        path: ctx.path,
-        parent: ctx
-      }));
-    }
-  }
-};
-ZodIntersection.create = (left, right, params2) => {
-  return new ZodIntersection({
-    left,
-    right,
-    typeName: ZodFirstPartyTypeKind.ZodIntersection,
-    ...processCreateParams(params2)
-  });
-};
-var ZodTuple = class _ZodTuple extends ZodType {
-  _parse(input) {
-    const { status, ctx } = this._processInputParams(input);
-    if (ctx.parsedType !== ZodParsedType.array) {
-      addIssueToContext(ctx, {
-        code: ZodIssueCode.invalid_type,
-        expected: ZodParsedType.array,
-        received: ctx.parsedType
-      });
-      return INVALID;
-    }
-    if (ctx.data.length < this._def.items.length) {
-      addIssueToContext(ctx, {
-        code: ZodIssueCode.too_small,
-        minimum: this._def.items.length,
-        inclusive: true,
-        exact: false,
-        type: "array"
-      });
-      return INVALID;
-    }
-    const rest = this._def.rest;
-    if (!rest && ctx.data.length > this._def.items.length) {
-      addIssueToContext(ctx, {
-        code: ZodIssueCode.too_big,
-        maximum: this._def.items.length,
-        inclusive: true,
-        exact: false,
-        type: "array"
-      });
-      status.dirty();
-    }
-    const items = [...ctx.data].map((item, itemIndex) => {
-      const schema = this._def.items[itemIndex] || this._def.rest;
-      if (!schema)
-        return null;
-      return schema._parse(new ParseInputLazyPath(ctx, item, ctx.path, itemIndex));
-    }).filter((x) => !!x);
-    if (ctx.common.async) {
-      return Promise.all(items).then((results) => {
-        return ParseStatus.mergeArray(status, results);
-      });
-    } else {
-      return ParseStatus.mergeArray(status, items);
-    }
-  }
-  get items() {
-    return this._def.items;
-  }
-  rest(rest) {
-    return new _ZodTuple({
-      ...this._def,
-      rest
-    });
-  }
-};
-ZodTuple.create = (schemas, params2) => {
-  if (!Array.isArray(schemas)) {
-    throw new Error("You must pass an array of schemas to z.tuple([ ... ])");
-  }
-  return new ZodTuple({
-    items: schemas,
-    typeName: ZodFirstPartyTypeKind.ZodTuple,
-    rest: null,
-    ...processCreateParams(params2)
-  });
-};
-var ZodRecord = class _ZodRecord extends ZodType {
-  get keySchema() {
-    return this._def.keyType;
-  }
-  get valueSchema() {
-    return this._def.valueType;
-  }
-  _parse(input) {
-    const { status, ctx } = this._processInputParams(input);
-    if (ctx.parsedType !== ZodParsedType.object) {
-      addIssueToContext(ctx, {
-        code: ZodIssueCode.invalid_type,
-        expected: ZodParsedType.object,
-        received: ctx.parsedType
-      });
-      return INVALID;
-    }
-    const pairs = [];
-    const keyType = this._def.keyType;
-    const valueType = this._def.valueType;
-    for (const key in ctx.data) {
-      pairs.push({
-        key: keyType._parse(new ParseInputLazyPath(ctx, key, ctx.path, key)),
-        value: valueType._parse(new ParseInputLazyPath(ctx, ctx.data[key], ctx.path, key)),
-        alwaysSet: key in ctx.data
-      });
-    }
-    if (ctx.common.async) {
-      return ParseStatus.mergeObjectAsync(status, pairs);
-    } else {
-      return ParseStatus.mergeObjectSync(status, pairs);
-    }
-  }
-  get element() {
-    return this._def.valueType;
-  }
-  static create(first, second, third) {
-    if (second instanceof ZodType) {
-      return new _ZodRecord({
-        keyType: first,
-        valueType: second,
-        typeName: ZodFirstPartyTypeKind.ZodRecord,
-        ...processCreateParams(third)
-      });
-    }
-    return new _ZodRecord({
-      keyType: ZodString.create(),
-      valueType: first,
-      typeName: ZodFirstPartyTypeKind.ZodRecord,
-      ...processCreateParams(second)
-    });
-  }
-};
-var ZodMap = class extends ZodType {
-  get keySchema() {
-    return this._def.keyType;
-  }
-  get valueSchema() {
-    return this._def.valueType;
-  }
-  _parse(input) {
-    const { status, ctx } = this._processInputParams(input);
-    if (ctx.parsedType !== ZodParsedType.map) {
-      addIssueToContext(ctx, {
-        code: ZodIssueCode.invalid_type,
-        expected: ZodParsedType.map,
-        received: ctx.parsedType
-      });
-      return INVALID;
-    }
-    const keyType = this._def.keyType;
-    const valueType = this._def.valueType;
-    const pairs = [...ctx.data.entries()].map(([key, value], index2) => {
-      return {
-        key: keyType._parse(new ParseInputLazyPath(ctx, key, ctx.path, [index2, "key"])),
-        value: valueType._parse(new ParseInputLazyPath(ctx, value, ctx.path, [index2, "value"]))
+    __publicField(this, "dbName", "vault-sync-buffer");
+    __publicField(this, "storeName", "updates");
+  }
+  async init() {
+    return new Promise((resolve2, reject2) => {
+      const request2 = indexedDB.open(this.dbName, 1);
+      request2.onupgradeneeded = () => {
+        const db = request2.result;
+        db.createObjectStore(this.storeName, { autoIncrement: true });
       };
-    });
-    if (ctx.common.async) {
-      const finalMap = /* @__PURE__ */ new Map();
-      return Promise.resolve().then(async () => {
-        for (const pair of pairs) {
-          const key = await pair.key;
-          const value = await pair.value;
-          if (key.status === "aborted" || value.status === "aborted") {
-            return INVALID;
-          }
-          if (key.status === "dirty" || value.status === "dirty") {
-            status.dirty();
-          }
-          finalMap.set(key.value, value.value);
-        }
-        return { status: status.value, value: finalMap };
-      });
-    } else {
-      const finalMap = /* @__PURE__ */ new Map();
-      for (const pair of pairs) {
-        const key = pair.key;
-        const value = pair.value;
-        if (key.status === "aborted" || value.status === "aborted") {
-          return INVALID;
-        }
-        if (key.status === "dirty" || value.status === "dirty") {
-          status.dirty();
-        }
-        finalMap.set(key.value, value.value);
-      }
-      return { status: status.value, value: finalMap };
-    }
-  }
-};
-ZodMap.create = (keyType, valueType, params2) => {
-  return new ZodMap({
-    valueType,
-    keyType,
-    typeName: ZodFirstPartyTypeKind.ZodMap,
-    ...processCreateParams(params2)
-  });
-};
-var ZodSet = class _ZodSet extends ZodType {
-  _parse(input) {
-    const { status, ctx } = this._processInputParams(input);
-    if (ctx.parsedType !== ZodParsedType.set) {
-      addIssueToContext(ctx, {
-        code: ZodIssueCode.invalid_type,
-        expected: ZodParsedType.set,
-        received: ctx.parsedType
-      });
-      return INVALID;
-    }
-    const def = this._def;
-    if (def.minSize !== null) {
-      if (ctx.data.size < def.minSize.value) {
-        addIssueToContext(ctx, {
-          code: ZodIssueCode.too_small,
-          minimum: def.minSize.value,
-          type: "set",
-          inclusive: true,
-          exact: false,
-          message: def.minSize.message
-        });
-        status.dirty();
-      }
-    }
-    if (def.maxSize !== null) {
-      if (ctx.data.size > def.maxSize.value) {
-        addIssueToContext(ctx, {
-          code: ZodIssueCode.too_big,
-          maximum: def.maxSize.value,
-          type: "set",
-          inclusive: true,
-          exact: false,
-          message: def.maxSize.message
-        });
-        status.dirty();
-      }
-    }
-    const valueType = this._def.valueType;
-    function finalizeSet(elements2) {
-      const parsedSet = /* @__PURE__ */ new Set();
-      for (const element2 of elements2) {
-        if (element2.status === "aborted")
-          return INVALID;
-        if (element2.status === "dirty")
-          status.dirty();
-        parsedSet.add(element2.value);
-      }
-      return { status: status.value, value: parsedSet };
-    }
-    const elements = [...ctx.data.values()].map((item, i) => valueType._parse(new ParseInputLazyPath(ctx, item, ctx.path, i)));
-    if (ctx.common.async) {
-      return Promise.all(elements).then((elements2) => finalizeSet(elements2));
-    } else {
-      return finalizeSet(elements);
-    }
-  }
-  min(minSize, message) {
-    return new _ZodSet({
-      ...this._def,
-      minSize: { value: minSize, message: errorUtil.toString(message) }
+      request2.onsuccess = () => resolve2();
+      request2.onerror = () => reject2(request2.error);
     });
   }
-  max(maxSize, message) {
-    return new _ZodSet({
-      ...this._def,
-      maxSize: { value: maxSize, message: errorUtil.toString(message) }
+  async push(file, update) {
+    return this.runTransaction("readwrite", (store) => {
+      store.add({ file, update, timestamp: Date.now() });
     });
   }
-  size(size2, message) {
-    return this.min(size2, message).max(size2, message);
-  }
-  nonempty(message) {
-    return this.min(1, message);
-  }
-};
-ZodSet.create = (valueType, params2) => {
-  return new ZodSet({
-    valueType,
-    minSize: null,
-    maxSize: null,
-    typeName: ZodFirstPartyTypeKind.ZodSet,
-    ...processCreateParams(params2)
-  });
-};
-var ZodFunction = class _ZodFunction extends ZodType {
-  constructor() {
-    super(...arguments);
-    this.validate = this.implement;
-  }
-  _parse(input) {
-    const { ctx } = this._processInputParams(input);
-    if (ctx.parsedType !== ZodParsedType.function) {
-      addIssueToContext(ctx, {
-        code: ZodIssueCode.invalid_type,
-        expected: ZodParsedType.function,
-        received: ctx.parsedType
-      });
-      return INVALID;
-    }
-    function makeArgsIssue(args2, error) {
-      return makeIssue({
-        data: args2,
-        path: ctx.path,
-        errorMaps: [ctx.common.contextualErrorMap, ctx.schemaErrorMap, getErrorMap(), en_default].filter((x) => !!x),
-        issueData: {
-          code: ZodIssueCode.invalid_arguments,
-          argumentsError: error
-        }
-      });
-    }
-    function makeReturnsIssue(returns, error) {
-      return makeIssue({
-        data: returns,
-        path: ctx.path,
-        errorMaps: [ctx.common.contextualErrorMap, ctx.schemaErrorMap, getErrorMap(), en_default].filter((x) => !!x),
-        issueData: {
-          code: ZodIssueCode.invalid_return_type,
-          returnTypeError: error
-        }
-      });
-    }
-    const params2 = { errorMap: ctx.common.contextualErrorMap };
-    const fn = ctx.data;
-    if (this._def.returns instanceof ZodPromise) {
-      const me = this;
-      return OK(async function(...args2) {
-        const error = new ZodError([]);
-        const parsedArgs = await me._def.args.parseAsync(args2, params2).catch((e) => {
-          error.addIssue(makeArgsIssue(args2, e));
-          throw error;
-        });
-        const result = await Reflect.apply(fn, this, parsedArgs);
-        const parsedReturns = await me._def.returns._def.type.parseAsync(result, params2).catch((e) => {
-          error.addIssue(makeReturnsIssue(result, e));
-          throw error;
-        });
-        return parsedReturns;
-      });
-    } else {
-      const me = this;
-      return OK(function(...args2) {
-        const parsedArgs = me._def.args.safeParse(args2, params2);
-        if (!parsedArgs.success) {
-          throw new ZodError([makeArgsIssue(args2, parsedArgs.error)]);
-        }
-        const result = Reflect.apply(fn, this, parsedArgs.data);
-        const parsedReturns = me._def.returns.safeParse(result, params2);
-        if (!parsedReturns.success) {
-          throw new ZodError([makeReturnsIssue(result, parsedReturns.error)]);
-        }
-        return parsedReturns.data;
-      });
-    }
-  }
-  parameters() {
-    return this._def.args;
-  }
-  returnType() {
-    return this._def.returns;
-  }
-  args(...items) {
-    return new _ZodFunction({
-      ...this._def,
-      args: ZodTuple.create(items).rest(ZodUnknown.create())
-    });
-  }
-  returns(returnType) {
-    return new _ZodFunction({
-      ...this._def,
-      returns: returnType
-    });
-  }
-  implement(func) {
-    const validatedFunc = this.parse(func);
-    return validatedFunc;
-  }
-  strictImplement(func) {
-    const validatedFunc = this.parse(func);
-    return validatedFunc;
-  }
-  static create(args2, returns, params2) {
-    return new _ZodFunction({
-      args: args2 ? args2 : ZodTuple.create([]).rest(ZodUnknown.create()),
-      returns: returns || ZodUnknown.create(),
-      typeName: ZodFirstPartyTypeKind.ZodFunction,
-      ...processCreateParams(params2)
-    });
-  }
-};
-var ZodLazy = class extends ZodType {
-  get schema() {
-    return this._def.getter();
-  }
-  _parse(input) {
-    const { ctx } = this._processInputParams(input);
-    const lazySchema = this._def.getter();
-    return lazySchema._parse({ data: ctx.data, path: ctx.path, parent: ctx });
-  }
-};
-ZodLazy.create = (getter, params2) => {
-  return new ZodLazy({
-    getter,
-    typeName: ZodFirstPartyTypeKind.ZodLazy,
-    ...processCreateParams(params2)
-  });
-};
-var ZodLiteral = class extends ZodType {
-  _parse(input) {
-    if (input.data !== this._def.value) {
-      const ctx = this._getOrReturnCtx(input);
-      addIssueToContext(ctx, {
-        received: ctx.data,
-        code: ZodIssueCode.invalid_literal,
-        expected: this._def.value
-      });
-      return INVALID;
-    }
-    return { status: "valid", value: input.data };
-  }
-  get value() {
-    return this._def.value;
-  }
-};
-ZodLiteral.create = (value, params2) => {
-  return new ZodLiteral({
-    value,
-    typeName: ZodFirstPartyTypeKind.ZodLiteral,
-    ...processCreateParams(params2)
-  });
-};
-function createZodEnum(values, params2) {
-  return new ZodEnum({
-    values,
-    typeName: ZodFirstPartyTypeKind.ZodEnum,
-    ...processCreateParams(params2)
-  });
-}
-var ZodEnum = class _ZodEnum extends ZodType {
-  _parse(input) {
-    if (typeof input.data !== "string") {
-      const ctx = this._getOrReturnCtx(input);
-      const expectedValues = this._def.values;
-      addIssueToContext(ctx, {
-        expected: util.joinValues(expectedValues),
-        received: ctx.parsedType,
-        code: ZodIssueCode.invalid_type
-      });
-      return INVALID;
-    }
-    if (!this._cache) {
-      this._cache = new Set(this._def.values);
-    }
-    if (!this._cache.has(input.data)) {
-      const ctx = this._getOrReturnCtx(input);
-      const expectedValues = this._def.values;
-      addIssueToContext(ctx, {
-        received: ctx.data,
-        code: ZodIssueCode.invalid_enum_value,
-        options: expectedValues
-      });
-      return INVALID;
-    }
-    return OK(input.data);
-  }
-  get options() {
-    return this._def.values;
-  }
-  get enum() {
-    const enumValues = {};
-    for (const val of this._def.values) {
-      enumValues[val] = val;
-    }
-    return enumValues;
-  }
-  get Values() {
-    const enumValues = {};
-    for (const val of this._def.values) {
-      enumValues[val] = val;
-    }
-    return enumValues;
-  }
-  get Enum() {
-    const enumValues = {};
-    for (const val of this._def.values) {
-      enumValues[val] = val;
-    }
-    return enumValues;
-  }
-  extract(values, newDef = this._def) {
-    return _ZodEnum.create(values, {
-      ...this._def,
-      ...newDef
-    });
-  }
-  exclude(values, newDef = this._def) {
-    return _ZodEnum.create(this.options.filter((opt) => !values.includes(opt)), {
-      ...this._def,
-      ...newDef
-    });
-  }
-};
-ZodEnum.create = createZodEnum;
-var ZodNativeEnum = class extends ZodType {
-  _parse(input) {
-    const nativeEnumValues = util.getValidEnumValues(this._def.values);
-    const ctx = this._getOrReturnCtx(input);
-    if (ctx.parsedType !== ZodParsedType.string && ctx.parsedType !== ZodParsedType.number) {
-      const expectedValues = util.objectValues(nativeEnumValues);
-      addIssueToContext(ctx, {
-        expected: util.joinValues(expectedValues),
-        received: ctx.parsedType,
-        code: ZodIssueCode.invalid_type
-      });
-      return INVALID;
-    }
-    if (!this._cache) {
-      this._cache = new Set(util.getValidEnumValues(this._def.values));
-    }
-    if (!this._cache.has(input.data)) {
-      const expectedValues = util.objectValues(nativeEnumValues);
-      addIssueToContext(ctx, {
-        received: ctx.data,
-        code: ZodIssueCode.invalid_enum_value,
-        options: expectedValues
-      });
-      return INVALID;
-    }
-    return OK(input.data);
-  }
-  get enum() {
-    return this._def.values;
-  }
-};
-ZodNativeEnum.create = (values, params2) => {
-  return new ZodNativeEnum({
-    values,
-    typeName: ZodFirstPartyTypeKind.ZodNativeEnum,
-    ...processCreateParams(params2)
-  });
-};
-var ZodPromise = class extends ZodType {
-  unwrap() {
-    return this._def.type;
-  }
-  _parse(input) {
-    const { ctx } = this._processInputParams(input);
-    if (ctx.parsedType !== ZodParsedType.promise && ctx.common.async === false) {
-      addIssueToContext(ctx, {
-        code: ZodIssueCode.invalid_type,
-        expected: ZodParsedType.promise,
-        received: ctx.parsedType
-      });
-      return INVALID;
-    }
-    const promisified = ctx.parsedType === ZodParsedType.promise ? ctx.data : Promise.resolve(ctx.data);
-    return OK(promisified.then((data) => {
-      return this._def.type.parseAsync(data, {
-        path: ctx.path,
-        errorMap: ctx.common.contextualErrorMap
-      });
-    }));
-  }
-};
-ZodPromise.create = (schema, params2) => {
-  return new ZodPromise({
-    type: schema,
-    typeName: ZodFirstPartyTypeKind.ZodPromise,
-    ...processCreateParams(params2)
-  });
-};
-var ZodEffects = class extends ZodType {
-  innerType() {
-    return this._def.schema;
-  }
-  sourceType() {
-    return this._def.schema._def.typeName === ZodFirstPartyTypeKind.ZodEffects ? this._def.schema.sourceType() : this._def.schema;
-  }
-  _parse(input) {
-    const { status, ctx } = this._processInputParams(input);
-    const effect = this._def.effect || null;
-    const checkCtx = {
-      addIssue: (arg) => {
-        addIssueToContext(ctx, arg);
-        if (arg.fatal) {
-          status.abort();
-        } else {
-          status.dirty();
-        }
-      },
-      get path() {
-        return ctx.path;
-      }
-    };
-    checkCtx.addIssue = checkCtx.addIssue.bind(checkCtx);
-    if (effect.type === "preprocess") {
-      const processed = effect.transform(ctx.data, checkCtx);
-      if (ctx.common.async) {
-        return Promise.resolve(processed).then(async (processed2) => {
-          if (status.value === "aborted")
-            return INVALID;
-          const result = await this._def.schema._parseAsync({
-            data: processed2,
-            path: ctx.path,
-            parent: ctx
-          });
-          if (result.status === "aborted")
-            return INVALID;
-          if (result.status === "dirty")
-            return DIRTY(result.value);
-          if (status.value === "dirty")
-            return DIRTY(result.value);
-          return result;
-        });
-      } else {
-        if (status.value === "aborted")
-          return INVALID;
-        const result = this._def.schema._parseSync({
-          data: processed,
-          path: ctx.path,
-          parent: ctx
-        });
-        if (result.status === "aborted")
-          return INVALID;
-        if (result.status === "dirty")
-          return DIRTY(result.value);
-        if (status.value === "dirty")
-          return DIRTY(result.value);
-        return result;
-      }
-    }
-    if (effect.type === "refinement") {
-      const executeRefinement = (acc) => {
-        const result = effect.refinement(acc, checkCtx);
-        if (ctx.common.async) {
-          return Promise.resolve(result);
-        }
-        if (result instanceof Promise) {
-          throw new Error("Async refinement encountered during synchronous parse operation. Use .parseAsync instead.");
-        }
-        return acc;
-      };
-      if (ctx.common.async === false) {
-        const inner = this._def.schema._parseSync({
-          data: ctx.data,
-          path: ctx.path,
-          parent: ctx
-        });
-        if (inner.status === "aborted")
-          return INVALID;
-        if (inner.status === "dirty")
-          status.dirty();
-        executeRefinement(inner.value);
-        return { status: status.value, value: inner.value };
-      } else {
-        return this._def.schema._parseAsync({ data: ctx.data, path: ctx.path, parent: ctx }).then((inner) => {
-          if (inner.status === "aborted")
-            return INVALID;
-          if (inner.status === "dirty")
-            status.dirty();
-          return executeRefinement(inner.value).then(() => {
-            return { status: status.value, value: inner.value };
-          });
-        });
-      }
-    }
-    if (effect.type === "transform") {
-      if (ctx.common.async === false) {
-        const base = this._def.schema._parseSync({
-          data: ctx.data,
-          path: ctx.path,
-          parent: ctx
-        });
-        if (!isValid(base))
-          return INVALID;
-        const result = effect.transform(base.value, checkCtx);
-        if (result instanceof Promise) {
-          throw new Error(`Asynchronous transform encountered during synchronous parse operation. Use .parseAsync instead.`);
-        }
-        return { status: status.value, value: result };
-      } else {
-        return this._def.schema._parseAsync({ data: ctx.data, path: ctx.path, parent: ctx }).then((base) => {
-          if (!isValid(base))
-            return INVALID;
-          return Promise.resolve(effect.transform(base.value, checkCtx)).then((result) => ({
-            status: status.value,
-            value: result
+  async getAll() {
+    return new Promise((resolve2, reject2) => {
+      const request2 = indexedDB.open(this.dbName, 1);
+      request2.onsuccess = () => {
+        const db = request2.result;
+        const transaction = db.transaction(this.storeName, "readonly");
+        const store = transaction.objectStore(this.storeName);
+        const getAllRequest = store.getAll();
+        const getAllKeysRequest = store.getAllKeys();
+        transaction.oncomplete = () => {
+          const results = getAllRequest.result.map((val, i) => ({
+            id: getAllKeysRequest.result[i],
+            ...val
           }));
-        });
-      }
-    }
-    util.assertNever(effect);
-  }
-};
-ZodEffects.create = (schema, effect, params2) => {
-  return new ZodEffects({
-    schema,
-    typeName: ZodFirstPartyTypeKind.ZodEffects,
-    effect,
-    ...processCreateParams(params2)
-  });
-};
-ZodEffects.createWithPreprocess = (preprocess, schema, params2) => {
-  return new ZodEffects({
-    schema,
-    effect: { type: "preprocess", transform: preprocess },
-    typeName: ZodFirstPartyTypeKind.ZodEffects,
-    ...processCreateParams(params2)
-  });
-};
-var ZodOptional = class extends ZodType {
-  _parse(input) {
-    const parsedType = this._getType(input);
-    if (parsedType === ZodParsedType.undefined) {
-      return OK(void 0);
-    }
-    return this._def.innerType._parse(input);
-  }
-  unwrap() {
-    return this._def.innerType;
-  }
-};
-ZodOptional.create = (type, params2) => {
-  return new ZodOptional({
-    innerType: type,
-    typeName: ZodFirstPartyTypeKind.ZodOptional,
-    ...processCreateParams(params2)
-  });
-};
-var ZodNullable = class extends ZodType {
-  _parse(input) {
-    const parsedType = this._getType(input);
-    if (parsedType === ZodParsedType.null) {
-      return OK(null);
-    }
-    return this._def.innerType._parse(input);
-  }
-  unwrap() {
-    return this._def.innerType;
-  }
-};
-ZodNullable.create = (type, params2) => {
-  return new ZodNullable({
-    innerType: type,
-    typeName: ZodFirstPartyTypeKind.ZodNullable,
-    ...processCreateParams(params2)
-  });
-};
-var ZodDefault = class extends ZodType {
-  _parse(input) {
-    const { ctx } = this._processInputParams(input);
-    let data = ctx.data;
-    if (ctx.parsedType === ZodParsedType.undefined) {
-      data = this._def.defaultValue();
-    }
-    return this._def.innerType._parse({
-      data,
-      path: ctx.path,
-      parent: ctx
-    });
-  }
-  removeDefault() {
-    return this._def.innerType;
-  }
-};
-ZodDefault.create = (type, params2) => {
-  return new ZodDefault({
-    innerType: type,
-    typeName: ZodFirstPartyTypeKind.ZodDefault,
-    defaultValue: typeof params2.default === "function" ? params2.default : () => params2.default,
-    ...processCreateParams(params2)
-  });
-};
-var ZodCatch = class extends ZodType {
-  _parse(input) {
-    const { ctx } = this._processInputParams(input);
-    const newCtx = {
-      ...ctx,
-      common: {
-        ...ctx.common,
-        issues: []
-      }
-    };
-    const result = this._def.innerType._parse({
-      data: newCtx.data,
-      path: newCtx.path,
-      parent: {
-        ...newCtx
-      }
-    });
-    if (isAsync(result)) {
-      return result.then((result2) => {
-        return {
-          status: "valid",
-          value: result2.status === "valid" ? result2.value : this._def.catchValue({
-            get error() {
-              return new ZodError(newCtx.common.issues);
-            },
-            input: newCtx.data
-          })
+          resolve2(results);
         };
-      });
-    } else {
-      return {
-        status: "valid",
-        value: result.status === "valid" ? result.value : this._def.catchValue({
-          get error() {
-            return new ZodError(newCtx.common.issues);
-          },
-          input: newCtx.data
-        })
+        transaction.onerror = () => reject2(transaction.error);
       };
-    }
-  }
-  removeCatch() {
-    return this._def.innerType;
-  }
-};
-ZodCatch.create = (type, params2) => {
-  return new ZodCatch({
-    innerType: type,
-    typeName: ZodFirstPartyTypeKind.ZodCatch,
-    catchValue: typeof params2.catch === "function" ? params2.catch : () => params2.catch,
-    ...processCreateParams(params2)
-  });
-};
-var ZodNaN = class extends ZodType {
-  _parse(input) {
-    const parsedType = this._getType(input);
-    if (parsedType !== ZodParsedType.nan) {
-      const ctx = this._getOrReturnCtx(input);
-      addIssueToContext(ctx, {
-        code: ZodIssueCode.invalid_type,
-        expected: ZodParsedType.nan,
-        received: ctx.parsedType
-      });
-      return INVALID;
-    }
-    return { status: "valid", value: input.data };
-  }
-};
-ZodNaN.create = (params2) => {
-  return new ZodNaN({
-    typeName: ZodFirstPartyTypeKind.ZodNaN,
-    ...processCreateParams(params2)
-  });
-};
-var BRAND = Symbol("zod_brand");
-var ZodBranded = class extends ZodType {
-  _parse(input) {
-    const { ctx } = this._processInputParams(input);
-    const data = ctx.data;
-    return this._def.type._parse({
-      data,
-      path: ctx.path,
-      parent: ctx
     });
   }
-  unwrap() {
-    return this._def.type;
+  async remove(id2) {
+    return this.runTransaction("readwrite", (store) => {
+      store.delete(id2);
+    });
   }
-};
-var ZodPipeline = class _ZodPipeline extends ZodType {
-  _parse(input) {
-    const { status, ctx } = this._processInputParams(input);
-    if (ctx.common.async) {
-      const handleAsync = async () => {
-        const inResult = await this._def.in._parseAsync({
-          data: ctx.data,
-          path: ctx.path,
-          parent: ctx
-        });
-        if (inResult.status === "aborted")
-          return INVALID;
-        if (inResult.status === "dirty") {
-          status.dirty();
-          return DIRTY(inResult.value);
-        } else {
-          return this._def.out._parseAsync({
-            data: inResult.value,
-            path: ctx.path,
-            parent: ctx
-          });
-        }
+  runTransaction(mode, action) {
+    return new Promise((resolve2, reject2) => {
+      const request2 = indexedDB.open(this.dbName, 1);
+      request2.onsuccess = () => {
+        const db = request2.result;
+        const transaction = db.transaction(this.storeName, mode);
+        action(transaction.objectStore(this.storeName));
+        transaction.oncomplete = () => resolve2();
+        transaction.onerror = () => reject2(transaction.error);
       };
-      return handleAsync();
-    } else {
-      const inResult = this._def.in._parseSync({
-        data: ctx.data,
-        path: ctx.path,
-        parent: ctx
-      });
-      if (inResult.status === "aborted")
-        return INVALID;
-      if (inResult.status === "dirty") {
-        status.dirty();
-        return {
-          status: "dirty",
-          value: inResult.value
-        };
-      } else {
-        return this._def.out._parseSync({
-          data: inResult.value,
-          path: ctx.path,
-          parent: ctx
-        });
-      }
-    }
-  }
-  static create(a, b) {
-    return new _ZodPipeline({
-      in: a,
-      out: b,
-      typeName: ZodFirstPartyTypeKind.ZodPipeline
     });
   }
 };
-var ZodReadonly = class extends ZodType {
-  _parse(input) {
-    const result = this._def.innerType._parse(input);
-    const freeze2 = (data) => {
-      if (isValid(data)) {
-        data.value = Object.freeze(data.value);
-      }
-      return data;
-    };
-    return isAsync(result) ? result.then((data) => freeze2(data)) : freeze2(result);
-  }
-  unwrap() {
-    return this._def.innerType;
-  }
-};
-ZodReadonly.create = (type, params2) => {
-  return new ZodReadonly({
-    innerType: type,
-    typeName: ZodFirstPartyTypeKind.ZodReadonly,
-    ...processCreateParams(params2)
-  });
-};
-function cleanParams(params2, data) {
-  const p = typeof params2 === "function" ? params2(data) : typeof params2 === "string" ? { message: params2 } : params2;
-  const p2 = typeof p === "string" ? { message: p } : p;
-  return p2;
-}
-function custom(check, _params = {}, fatal) {
-  if (check)
-    return ZodAny.create().superRefine((data, ctx) => {
-      var _a, _b;
-      const r = check(data);
-      if (r instanceof Promise) {
-        return r.then((r2) => {
-          var _a2, _b2;
-          if (!r2) {
-            const params2 = cleanParams(_params, data);
-            const _fatal = (_b2 = (_a2 = params2.fatal) != null ? _a2 : fatal) != null ? _b2 : true;
-            ctx.addIssue({ code: "custom", ...params2, fatal: _fatal });
-          }
-        });
-      }
-      if (!r) {
-        const params2 = cleanParams(_params, data);
-        const _fatal = (_b = (_a = params2.fatal) != null ? _a : fatal) != null ? _b : true;
-        ctx.addIssue({ code: "custom", ...params2, fatal: _fatal });
-      }
-      return;
-    });
-  return ZodAny.create();
-}
-var late = {
-  object: ZodObject.lazycreate
-};
-var ZodFirstPartyTypeKind;
-(function(ZodFirstPartyTypeKind2) {
-  ZodFirstPartyTypeKind2["ZodString"] = "ZodString";
-  ZodFirstPartyTypeKind2["ZodNumber"] = "ZodNumber";
-  ZodFirstPartyTypeKind2["ZodNaN"] = "ZodNaN";
-  ZodFirstPartyTypeKind2["ZodBigInt"] = "ZodBigInt";
-  ZodFirstPartyTypeKind2["ZodBoolean"] = "ZodBoolean";
-  ZodFirstPartyTypeKind2["ZodDate"] = "ZodDate";
-  ZodFirstPartyTypeKind2["ZodSymbol"] = "ZodSymbol";
-  ZodFirstPartyTypeKind2["ZodUndefined"] = "ZodUndefined";
-  ZodFirstPartyTypeKind2["ZodNull"] = "ZodNull";
-  ZodFirstPartyTypeKind2["ZodAny"] = "ZodAny";
-  ZodFirstPartyTypeKind2["ZodUnknown"] = "ZodUnknown";
-  ZodFirstPartyTypeKind2["ZodNever"] = "ZodNever";
-  ZodFirstPartyTypeKind2["ZodVoid"] = "ZodVoid";
-  ZodFirstPartyTypeKind2["ZodArray"] = "ZodArray";
-  ZodFirstPartyTypeKind2["ZodObject"] = "ZodObject";
-  ZodFirstPartyTypeKind2["ZodUnion"] = "ZodUnion";
-  ZodFirstPartyTypeKind2["ZodDiscriminatedUnion"] = "ZodDiscriminatedUnion";
-  ZodFirstPartyTypeKind2["ZodIntersection"] = "ZodIntersection";
-  ZodFirstPartyTypeKind2["ZodTuple"] = "ZodTuple";
-  ZodFirstPartyTypeKind2["ZodRecord"] = "ZodRecord";
-  ZodFirstPartyTypeKind2["ZodMap"] = "ZodMap";
-  ZodFirstPartyTypeKind2["ZodSet"] = "ZodSet";
-  ZodFirstPartyTypeKind2["ZodFunction"] = "ZodFunction";
-  ZodFirstPartyTypeKind2["ZodLazy"] = "ZodLazy";
-  ZodFirstPartyTypeKind2["ZodLiteral"] = "ZodLiteral";
-  ZodFirstPartyTypeKind2["ZodEnum"] = "ZodEnum";
-  ZodFirstPartyTypeKind2["ZodEffects"] = "ZodEffects";
-  ZodFirstPartyTypeKind2["ZodNativeEnum"] = "ZodNativeEnum";
-  ZodFirstPartyTypeKind2["ZodOptional"] = "ZodOptional";
-  ZodFirstPartyTypeKind2["ZodNullable"] = "ZodNullable";
-  ZodFirstPartyTypeKind2["ZodDefault"] = "ZodDefault";
-  ZodFirstPartyTypeKind2["ZodCatch"] = "ZodCatch";
-  ZodFirstPartyTypeKind2["ZodPromise"] = "ZodPromise";
-  ZodFirstPartyTypeKind2["ZodBranded"] = "ZodBranded";
-  ZodFirstPartyTypeKind2["ZodPipeline"] = "ZodPipeline";
-  ZodFirstPartyTypeKind2["ZodReadonly"] = "ZodReadonly";
-})(ZodFirstPartyTypeKind || (ZodFirstPartyTypeKind = {}));
-var instanceOfType = (cls, params2 = {
-  message: `Input not instance of ${cls.name}`
-}) => custom((data) => data instanceof cls, params2);
-var stringType = ZodString.create;
-var numberType = ZodNumber.create;
-var nanType = ZodNaN.create;
-var bigIntType = ZodBigInt.create;
-var booleanType = ZodBoolean.create;
-var dateType = ZodDate.create;
-var symbolType = ZodSymbol.create;
-var undefinedType = ZodUndefined.create;
-var nullType = ZodNull.create;
-var anyType = ZodAny.create;
-var unknownType = ZodUnknown.create;
-var neverType = ZodNever.create;
-var voidType = ZodVoid.create;
-var arrayType = ZodArray.create;
-var objectType = ZodObject.create;
-var strictObjectType = ZodObject.strictCreate;
-var unionType = ZodUnion.create;
-var discriminatedUnionType = ZodDiscriminatedUnion.create;
-var intersectionType = ZodIntersection.create;
-var tupleType = ZodTuple.create;
-var recordType = ZodRecord.create;
-var mapType = ZodMap.create;
-var setType = ZodSet.create;
-var functionType = ZodFunction.create;
-var lazyType = ZodLazy.create;
-var literalType = ZodLiteral.create;
-var enumType = ZodEnum.create;
-var nativeEnumType = ZodNativeEnum.create;
-var promiseType = ZodPromise.create;
-var effectsType = ZodEffects.create;
-var optionalType = ZodOptional.create;
-var nullableType = ZodNullable.create;
-var preprocessType = ZodEffects.createWithPreprocess;
-var pipelineType = ZodPipeline.create;
-var ostring = () => stringType().optional();
-var onumber = () => numberType().optional();
-var oboolean = () => booleanType().optional();
-var coerce = {
-  string: (arg) => ZodString.create({ ...arg, coerce: true }),
-  number: (arg) => ZodNumber.create({ ...arg, coerce: true }),
-  boolean: (arg) => ZodBoolean.create({
-    ...arg,
-    coerce: true
-  }),
-  bigint: (arg) => ZodBigInt.create({ ...arg, coerce: true }),
-  date: (arg) => ZodDate.create({ ...arg, coerce: true })
-};
-var NEVER = INVALID;
-
-// ../shared/src/protocol/index.ts
-var AuthenticateSchema = external_exports.object({
-  type: external_exports.literal("authenticate"),
-  vaultId: external_exports.string(),
-  secret: external_exports.string()
-});
-var AuthResultSchema = external_exports.object({
-  type: external_exports.literal("auth_result"),
-  success: external_exports.boolean(),
-  message: external_exports.string().optional()
-});
-var RegisterSchema = external_exports.object({
-  type: external_exports.literal("register"),
-  deviceId: external_exports.string(),
-  deviceName: external_exports.string()
-});
-var PeerInfoSchema = external_exports.object({
-  type: external_exports.literal("peer_info"),
-  peers: external_exports.array(external_exports.object({
-    deviceId: external_exports.string(),
-    deviceName: external_exports.string(),
-    lastSeen: external_exports.number()
-  }))
-});
-var CrdtUpdateSchema = external_exports.object({
-  type: external_exports.literal("crdt_update"),
-  file: external_exports.string(),
-  update: external_exports.instanceof(Uint8Array)
-  // Yjs binary update
-});
-var CrdtStateRequestSchema = external_exports.object({
-  type: external_exports.literal("crdt_state_request"),
-  file: external_exports.string()
-});
-var CrdtFullStateSchema = external_exports.object({
-  type: external_exports.literal("crdt_full_state"),
-  file: external_exports.string(),
-  state: external_exports.instanceof(Uint8Array)
-  // Yjs full state snapshot
-});
-var AlertSchema = external_exports.object({
-  type: external_exports.literal("alert"),
-  kind: external_exports.enum(["low_disk_space", "critical_disk_space", "sync_error"]),
-  message: external_exports.string()
-});
-var ProtocolMessageSchema = external_exports.discriminatedUnion("type", [
-  AuthenticateSchema,
-  AuthResultSchema,
-  RegisterSchema,
-  PeerInfoSchema,
-  CrdtUpdateSchema,
-  CrdtStateRequestSchema,
-  CrdtFullStateSchema,
-  AlertSchema
-]);
-
-// ../node_modules/.bun/cbor-x@1.6.0/node_modules/cbor-x/decode.js
-var decoder;
-try {
-  decoder = new TextDecoder();
-} catch (error) {
-}
-var src;
-var srcEnd;
-var position = 0;
-var EMPTY_ARRAY = [];
-var LEGACY_RECORD_INLINE_ID = 105;
-var RECORD_DEFINITIONS_ID = 57342;
-var RECORD_INLINE_ID = 57343;
-var BUNDLED_STRINGS_ID = 57337;
-var PACKED_REFERENCE_TAG_ID = 6;
-var STOP_CODE = {};
-var maxArraySize = 11281e4;
-var maxMapSize = 1681e4;
-var strings = EMPTY_ARRAY;
-var stringPosition = 0;
-var currentDecoder = {};
-var currentStructures;
-var srcString;
-var srcStringStart = 0;
-var srcStringEnd = 0;
-var bundledStrings;
-var referenceMap;
-var currentExtensions = [];
-var currentExtensionRanges = [];
-var packedValues;
-var dataView;
-var restoreMapsAsObject;
-var defaultOptions = {
-  useRecords: false,
-  mapsAsObjects: true
-};
-var sequentialMode = false;
-var inlineObjectReadThreshold = 2;
-try {
-  new Function("");
-} catch (error) {
-  inlineObjectReadThreshold = Infinity;
-}
-var Decoder2 = class _Decoder {
-  constructor(options) {
-    if (options) {
-      if ((options.keyMap || options._keyMap) && !options.useRecords) {
-        options.useRecords = false;
-        options.mapsAsObjects = true;
-      }
-      if (options.useRecords === false && options.mapsAsObjects === void 0)
-        options.mapsAsObjects = true;
-      if (options.getStructures)
-        options.getShared = options.getStructures;
-      if (options.getShared && !options.structures)
-        (options.structures = []).uninitialized = true;
-      if (options.keyMap) {
-        this.mapKey = /* @__PURE__ */ new Map();
-        for (let [k, v] of Object.entries(options.keyMap))
-          this.mapKey.set(v, k);
-      }
-    }
-    Object.assign(this, options);
-  }
-  /*
-  decodeKey(key) {
-  	return this.keyMap
-  		? Object.keys(this.keyMap)[Object.values(this.keyMap).indexOf(key)] || key
-  		: key
-  }
-  */
-  decodeKey(key) {
-    return this.keyMap ? this.mapKey.get(key) || key : key;
-  }
-  encodeKey(key) {
-    return this.keyMap && this.keyMap.hasOwnProperty(key) ? this.keyMap[key] : key;
-  }
-  encodeKeys(rec) {
-    if (!this._keyMap)
-      return rec;
-    let map2 = /* @__PURE__ */ new Map();
-    for (let [k, v] of Object.entries(rec))
-      map2.set(this._keyMap.hasOwnProperty(k) ? this._keyMap[k] : k, v);
-    return map2;
-  }
-  decodeKeys(map2) {
-    if (!this._keyMap || map2.constructor.name != "Map")
-      return map2;
-    if (!this._mapKey) {
-      this._mapKey = /* @__PURE__ */ new Map();
-      for (let [k, v] of Object.entries(this._keyMap))
-        this._mapKey.set(v, k);
-    }
-    let res = {};
-    map2.forEach((v, k) => res[safeKey(this._mapKey.has(k) ? this._mapKey.get(k) : k)] = v);
-    return res;
-  }
-  mapDecode(source, end) {
-    let res = this.decode(source);
-    if (this._keyMap) {
-      switch (res.constructor.name) {
-        case "Array":
-          return res.map((r) => this.decodeKeys(r));
-      }
-    }
-    return res;
-  }
-  decode(source, end) {
-    if (src) {
-      return saveState(() => {
-        clearSource();
-        return this ? this.decode(source, end) : _Decoder.prototype.decode.call(defaultOptions, source, end);
-      });
-    }
-    srcEnd = end > -1 ? end : source.length;
-    position = 0;
-    stringPosition = 0;
-    srcStringEnd = 0;
-    srcString = null;
-    strings = EMPTY_ARRAY;
-    bundledStrings = null;
-    src = source;
-    try {
-      dataView = source.dataView || (source.dataView = new DataView(source.buffer, source.byteOffset, source.byteLength));
-    } catch (error) {
-      src = null;
-      if (source instanceof Uint8Array)
-        throw error;
-      throw new Error("Source must be a Uint8Array or Buffer but was a " + (source && typeof source == "object" ? source.constructor.name : typeof source));
-    }
-    if (this instanceof _Decoder) {
-      currentDecoder = this;
-      packedValues = this.sharedValues && (this.pack ? new Array(this.maxPrivatePackedValues || 16).concat(this.sharedValues) : this.sharedValues);
-      if (this.structures) {
-        currentStructures = this.structures;
-        return checkedRead();
-      } else if (!currentStructures || currentStructures.length > 0) {
-        currentStructures = [];
-      }
-    } else {
-      currentDecoder = defaultOptions;
-      if (!currentStructures || currentStructures.length > 0)
-        currentStructures = [];
-      packedValues = null;
-    }
-    return checkedRead();
-  }
-  decodeMultiple(source, forEach3) {
-    let values, lastPosition = 0;
-    try {
-      let size2 = source.length;
-      sequentialMode = true;
-      let value = this ? this.decode(source, size2) : defaultDecoder.decode(source, size2);
-      if (forEach3) {
-        if (forEach3(value) === false) {
-          return;
-        }
-        while (position < size2) {
-          lastPosition = position;
-          if (forEach3(checkedRead()) === false) {
-            return;
-          }
-        }
-      } else {
-        values = [value];
-        while (position < size2) {
-          lastPosition = position;
-          values.push(checkedRead());
-        }
-        return values;
-      }
-    } catch (error) {
-      error.lastPosition = lastPosition;
-      error.values = values;
-      throw error;
-    } finally {
-      sequentialMode = false;
-      clearSource();
-    }
-  }
-};
-function checkedRead() {
-  try {
-    let result = read();
-    if (bundledStrings) {
-      if (position >= bundledStrings.postBundlePosition) {
-        let error = new Error("Unexpected bundle position");
-        error.incomplete = true;
-        throw error;
-      }
-      position = bundledStrings.postBundlePosition;
-      bundledStrings = null;
-    }
-    if (position == srcEnd) {
-      currentStructures = null;
-      src = null;
-      if (referenceMap)
-        referenceMap = null;
-    } else if (position > srcEnd) {
-      let error = new Error("Unexpected end of CBOR data");
-      error.incomplete = true;
-      throw error;
-    } else if (!sequentialMode) {
-      throw new Error("Data read, but end of buffer not reached");
-    }
-    return result;
-  } catch (error) {
-    clearSource();
-    if (error instanceof RangeError || error.message.startsWith("Unexpected end of buffer")) {
-      error.incomplete = true;
-    }
-    throw error;
-  }
-}
-function read() {
-  let token = src[position++];
-  let majorType = token >> 5;
-  token = token & 31;
-  if (token > 23) {
-    switch (token) {
-      case 24:
-        token = src[position++];
-        break;
-      case 25:
-        if (majorType == 7) {
-          return getFloat16();
-        }
-        token = dataView.getUint16(position);
-        position += 2;
-        break;
-      case 26:
-        if (majorType == 7) {
-          let value = dataView.getFloat32(position);
-          if (currentDecoder.useFloat32 > 2) {
-            let multiplier = mult10[(src[position] & 127) << 1 | src[position + 1] >> 7];
-            position += 4;
-            return (multiplier * value + (value > 0 ? 0.5 : -0.5) >> 0) / multiplier;
-          }
-          position += 4;
-          return value;
-        }
-        token = dataView.getUint32(position);
-        position += 4;
-        break;
-      case 27:
-        if (majorType == 7) {
-          let value = dataView.getFloat64(position);
-          position += 8;
-          return value;
-        }
-        if (majorType > 1) {
-          if (dataView.getUint32(position) > 0)
-            throw new Error("JavaScript does not support arrays, maps, or strings with length over 4294967295");
-          token = dataView.getUint32(position + 4);
-        } else if (currentDecoder.int64AsNumber) {
-          token = dataView.getUint32(position) * 4294967296;
-          token += dataView.getUint32(position + 4);
-        } else
-          token = dataView.getBigUint64(position);
-        position += 8;
-        break;
-      case 31:
-        switch (majorType) {
-          case 2:
-          case 3:
-            throw new Error("Indefinite length not supported for byte or text strings");
-          case 4:
-            let array = [];
-            let value, i = 0;
-            while ((value = read()) != STOP_CODE) {
-              if (i >= maxArraySize)
-                throw new Error(`Array length exceeds ${maxArraySize}`);
-              array[i++] = value;
-            }
-            return majorType == 4 ? array : majorType == 3 ? array.join("") : Buffer.concat(array);
-          case 5:
-            let key;
-            if (currentDecoder.mapsAsObjects) {
-              let object = {};
-              let i2 = 0;
-              if (currentDecoder.keyMap) {
-                while ((key = read()) != STOP_CODE) {
-                  if (i2++ >= maxMapSize)
-                    throw new Error(`Property count exceeds ${maxMapSize}`);
-                  object[safeKey(currentDecoder.decodeKey(key))] = read();
-                }
-              } else {
-                while ((key = read()) != STOP_CODE) {
-                  if (i2++ >= maxMapSize)
-                    throw new Error(`Property count exceeds ${maxMapSize}`);
-                  object[safeKey(key)] = read();
-                }
-              }
-              return object;
-            } else {
-              if (restoreMapsAsObject) {
-                currentDecoder.mapsAsObjects = true;
-                restoreMapsAsObject = false;
-              }
-              let map2 = /* @__PURE__ */ new Map();
-              if (currentDecoder.keyMap) {
-                let i2 = 0;
-                while ((key = read()) != STOP_CODE) {
-                  if (i2++ >= maxMapSize) {
-                    throw new Error(`Map size exceeds ${maxMapSize}`);
-                  }
-                  map2.set(currentDecoder.decodeKey(key), read());
-                }
-              } else {
-                let i2 = 0;
-                while ((key = read()) != STOP_CODE) {
-                  if (i2++ >= maxMapSize) {
-                    throw new Error(`Map size exceeds ${maxMapSize}`);
-                  }
-                  map2.set(key, read());
-                }
-              }
-              return map2;
-            }
-          case 7:
-            return STOP_CODE;
-          default:
-            throw new Error("Invalid major type for indefinite length " + majorType);
-        }
-      default:
-        throw new Error("Unknown token " + token);
-    }
-  }
-  switch (majorType) {
-    case 0:
-      return token;
-    case 1:
-      return ~token;
-    case 2:
-      return readBin(token);
-    case 3:
-      if (srcStringEnd >= position) {
-        return srcString.slice(position - srcStringStart, (position += token) - srcStringStart);
-      }
-      if (srcStringEnd == 0 && srcEnd < 140 && token < 32) {
-        let string = token < 16 ? shortStringInJS(token) : longStringInJS(token);
-        if (string != null)
-          return string;
-      }
-      return readFixedString(token);
-    case 4:
-      if (token >= maxArraySize)
-        throw new Error(`Array length exceeds ${maxArraySize}`);
-      let array = new Array(token);
-      for (let i = 0; i < token; i++)
-        array[i] = read();
-      return array;
-    case 5:
-      if (token >= maxMapSize)
-        throw new Error(`Map size exceeds ${maxArraySize}`);
-      if (currentDecoder.mapsAsObjects) {
-        let object = {};
-        if (currentDecoder.keyMap)
-          for (let i = 0; i < token; i++)
-            object[safeKey(currentDecoder.decodeKey(read()))] = read();
-        else
-          for (let i = 0; i < token; i++)
-            object[safeKey(read())] = read();
-        return object;
-      } else {
-        if (restoreMapsAsObject) {
-          currentDecoder.mapsAsObjects = true;
-          restoreMapsAsObject = false;
-        }
-        let map2 = /* @__PURE__ */ new Map();
-        if (currentDecoder.keyMap)
-          for (let i = 0; i < token; i++)
-            map2.set(currentDecoder.decodeKey(read()), read());
-        else
-          for (let i = 0; i < token; i++)
-            map2.set(read(), read());
-        return map2;
-      }
-    case 6:
-      if (token >= BUNDLED_STRINGS_ID) {
-        let structure = currentStructures[token & 8191];
-        if (structure) {
-          if (!structure.read)
-            structure.read = createStructureReader(structure);
-          return structure.read();
-        }
-        if (token < 65536) {
-          if (token == RECORD_INLINE_ID) {
-            let length2 = readJustLength();
-            let id2 = read();
-            let structure2 = read();
-            recordDefinition(id2, structure2);
-            let object = {};
-            if (currentDecoder.keyMap)
-              for (let i = 2; i < length2; i++) {
-                let key = currentDecoder.decodeKey(structure2[i - 2]);
-                object[safeKey(key)] = read();
-              }
-            else
-              for (let i = 2; i < length2; i++) {
-                let key = structure2[i - 2];
-                object[safeKey(key)] = read();
-              }
-            return object;
-          } else if (token == RECORD_DEFINITIONS_ID) {
-            let length2 = readJustLength();
-            let id2 = read();
-            for (let i = 2; i < length2; i++) {
-              recordDefinition(id2++, read());
-            }
-            return read();
-          } else if (token == BUNDLED_STRINGS_ID) {
-            return readBundleExt();
-          }
-          if (currentDecoder.getShared) {
-            loadShared();
-            structure = currentStructures[token & 8191];
-            if (structure) {
-              if (!structure.read)
-                structure.read = createStructureReader(structure);
-              return structure.read();
-            }
-          }
-        }
-      }
-      let extension = currentExtensions[token];
-      if (extension) {
-        if (extension.handlesRead)
-          return extension(read);
-        else
-          return extension(read());
-      } else {
-        let input = read();
-        for (let i = 0; i < currentExtensionRanges.length; i++) {
-          let value = currentExtensionRanges[i](token, input);
-          if (value !== void 0)
-            return value;
-        }
-        return new Tag(input, token);
-      }
-    case 7:
-      switch (token) {
-        case 20:
-          return false;
-        case 21:
-          return true;
-        case 22:
-          return null;
-        case 23:
-          return;
-        case 31:
-        default:
-          let packedValue = (packedValues || getPackedValues())[token];
-          if (packedValue !== void 0)
-            return packedValue;
-          throw new Error("Unknown token " + token);
-      }
-    default:
-      if (isNaN(token)) {
-        let error = new Error("Unexpected end of CBOR data");
-        error.incomplete = true;
-        throw error;
-      }
-      throw new Error("Unknown CBOR token " + token);
-  }
-}
-var validName = /^[a-zA-Z_$][a-zA-Z\d_$]*$/;
-function createStructureReader(structure) {
-  if (!structure)
-    throw new Error("Structure is required in record definition");
-  function readObject() {
-    let length2 = src[position++];
-    length2 = length2 & 31;
-    if (length2 > 23) {
-      switch (length2) {
-        case 24:
-          length2 = src[position++];
-          break;
-        case 25:
-          length2 = dataView.getUint16(position);
-          position += 2;
-          break;
-        case 26:
-          length2 = dataView.getUint32(position);
-          position += 4;
-          break;
-        default:
-          throw new Error("Expected array header, but got " + src[position - 1]);
-      }
-    }
-    let compiledReader = this.compiledReader;
-    while (compiledReader) {
-      if (compiledReader.propertyCount === length2)
-        return compiledReader(read);
-      compiledReader = compiledReader.next;
-    }
-    if (this.slowReads++ >= inlineObjectReadThreshold) {
-      let array = this.length == length2 ? this : this.slice(0, length2);
-      compiledReader = currentDecoder.keyMap ? new Function("r", "return {" + array.map((k) => currentDecoder.decodeKey(k)).map((k) => validName.test(k) ? safeKey(k) + ":r()" : "[" + JSON.stringify(k) + "]:r()").join(",") + "}") : new Function("r", "return {" + array.map((key) => validName.test(key) ? safeKey(key) + ":r()" : "[" + JSON.stringify(key) + "]:r()").join(",") + "}");
-      if (this.compiledReader)
-        compiledReader.next = this.compiledReader;
-      compiledReader.propertyCount = length2;
-      this.compiledReader = compiledReader;
-      return compiledReader(read);
-    }
-    let object = {};
-    if (currentDecoder.keyMap)
-      for (let i = 0; i < length2; i++)
-        object[safeKey(currentDecoder.decodeKey(this[i]))] = read();
-    else
-      for (let i = 0; i < length2; i++) {
-        object[safeKey(this[i])] = read();
-      }
-    return object;
-  }
-  structure.slowReads = 0;
-  return readObject;
-}
-function safeKey(key) {
-  if (typeof key === "string")
-    return key === "__proto__" ? "__proto_" : key;
-  if (typeof key === "number" || typeof key === "boolean" || typeof key === "bigint")
-    return key.toString();
-  if (key == null)
-    return key + "";
-  throw new Error("Invalid property name type " + typeof key);
-}
-var readFixedString = readStringJS;
-function readStringJS(length2) {
-  let result;
-  if (length2 < 16) {
-    if (result = shortStringInJS(length2))
-      return result;
-  }
-  if (length2 > 64 && decoder)
-    return decoder.decode(src.subarray(position, position += length2));
-  const end = position + length2;
-  const units = [];
-  result = "";
-  while (position < end) {
-    const byte1 = src[position++];
-    if ((byte1 & 128) === 0) {
-      units.push(byte1);
-    } else if ((byte1 & 224) === 192) {
-      const byte2 = src[position++] & 63;
-      units.push((byte1 & 31) << 6 | byte2);
-    } else if ((byte1 & 240) === 224) {
-      const byte2 = src[position++] & 63;
-      const byte3 = src[position++] & 63;
-      units.push((byte1 & 31) << 12 | byte2 << 6 | byte3);
-    } else if ((byte1 & 248) === 240) {
-      const byte2 = src[position++] & 63;
-      const byte3 = src[position++] & 63;
-      const byte4 = src[position++] & 63;
-      let unit = (byte1 & 7) << 18 | byte2 << 12 | byte3 << 6 | byte4;
-      if (unit > 65535) {
-        unit -= 65536;
-        units.push(unit >>> 10 & 1023 | 55296);
-        unit = 56320 | unit & 1023;
-      }
-      units.push(unit);
-    } else {
-      units.push(byte1);
-    }
-    if (units.length >= 4096) {
-      result += fromCharCode2.apply(String, units);
-      units.length = 0;
-    }
-  }
-  if (units.length > 0) {
-    result += fromCharCode2.apply(String, units);
-  }
-  return result;
-}
-var fromCharCode2 = String.fromCharCode;
-function longStringInJS(length2) {
-  let start = position;
-  let bytes = new Array(length2);
-  for (let i = 0; i < length2; i++) {
-    const byte = src[position++];
-    if ((byte & 128) > 0) {
-      position = start;
-      return;
-    }
-    bytes[i] = byte;
-  }
-  return fromCharCode2.apply(String, bytes);
-}
-function shortStringInJS(length2) {
-  if (length2 < 4) {
-    if (length2 < 2) {
-      if (length2 === 0)
-        return "";
-      else {
-        let a = src[position++];
-        if ((a & 128) > 1) {
-          position -= 1;
-          return;
-        }
-        return fromCharCode2(a);
-      }
-    } else {
-      let a = src[position++];
-      let b = src[position++];
-      if ((a & 128) > 0 || (b & 128) > 0) {
-        position -= 2;
-        return;
-      }
-      if (length2 < 3)
-        return fromCharCode2(a, b);
-      let c = src[position++];
-      if ((c & 128) > 0) {
-        position -= 3;
-        return;
-      }
-      return fromCharCode2(a, b, c);
-    }
-  } else {
-    let a = src[position++];
-    let b = src[position++];
-    let c = src[position++];
-    let d = src[position++];
-    if ((a & 128) > 0 || (b & 128) > 0 || (c & 128) > 0 || (d & 128) > 0) {
-      position -= 4;
-      return;
-    }
-    if (length2 < 6) {
-      if (length2 === 4)
-        return fromCharCode2(a, b, c, d);
-      else {
-        let e = src[position++];
-        if ((e & 128) > 0) {
-          position -= 5;
-          return;
-        }
-        return fromCharCode2(a, b, c, d, e);
-      }
-    } else if (length2 < 8) {
-      let e = src[position++];
-      let f = src[position++];
-      if ((e & 128) > 0 || (f & 128) > 0) {
-        position -= 6;
-        return;
-      }
-      if (length2 < 7)
-        return fromCharCode2(a, b, c, d, e, f);
-      let g = src[position++];
-      if ((g & 128) > 0) {
-        position -= 7;
-        return;
-      }
-      return fromCharCode2(a, b, c, d, e, f, g);
-    } else {
-      let e = src[position++];
-      let f = src[position++];
-      let g = src[position++];
-      let h = src[position++];
-      if ((e & 128) > 0 || (f & 128) > 0 || (g & 128) > 0 || (h & 128) > 0) {
-        position -= 8;
-        return;
-      }
-      if (length2 < 10) {
-        if (length2 === 8)
-          return fromCharCode2(a, b, c, d, e, f, g, h);
-        else {
-          let i = src[position++];
-          if ((i & 128) > 0) {
-            position -= 9;
-            return;
-          }
-          return fromCharCode2(a, b, c, d, e, f, g, h, i);
-        }
-      } else if (length2 < 12) {
-        let i = src[position++];
-        let j = src[position++];
-        if ((i & 128) > 0 || (j & 128) > 0) {
-          position -= 10;
-          return;
-        }
-        if (length2 < 11)
-          return fromCharCode2(a, b, c, d, e, f, g, h, i, j);
-        let k = src[position++];
-        if ((k & 128) > 0) {
-          position -= 11;
-          return;
-        }
-        return fromCharCode2(a, b, c, d, e, f, g, h, i, j, k);
-      } else {
-        let i = src[position++];
-        let j = src[position++];
-        let k = src[position++];
-        let l = src[position++];
-        if ((i & 128) > 0 || (j & 128) > 0 || (k & 128) > 0 || (l & 128) > 0) {
-          position -= 12;
-          return;
-        }
-        if (length2 < 14) {
-          if (length2 === 12)
-            return fromCharCode2(a, b, c, d, e, f, g, h, i, j, k, l);
-          else {
-            let m = src[position++];
-            if ((m & 128) > 0) {
-              position -= 13;
-              return;
-            }
-            return fromCharCode2(a, b, c, d, e, f, g, h, i, j, k, l, m);
-          }
-        } else {
-          let m = src[position++];
-          let n = src[position++];
-          if ((m & 128) > 0 || (n & 128) > 0) {
-            position -= 14;
-            return;
-          }
-          if (length2 < 15)
-            return fromCharCode2(a, b, c, d, e, f, g, h, i, j, k, l, m, n);
-          let o = src[position++];
-          if ((o & 128) > 0) {
-            position -= 15;
-            return;
-          }
-          return fromCharCode2(a, b, c, d, e, f, g, h, i, j, k, l, m, n, o);
-        }
-      }
-    }
-  }
-}
-function readBin(length2) {
-  return currentDecoder.copyBuffers ? (
-    // specifically use the copying slice (not the node one)
-    Uint8Array.prototype.slice.call(src, position, position += length2)
-  ) : src.subarray(position, position += length2);
-}
-var f32Array = new Float32Array(1);
-var u8Array = new Uint8Array(f32Array.buffer, 0, 4);
-function getFloat16() {
-  let byte0 = src[position++];
-  let byte1 = src[position++];
-  let exponent = (byte0 & 127) >> 2;
-  if (exponent === 31) {
-    if (byte1 || byte0 & 3)
-      return NaN;
-    return byte0 & 128 ? -Infinity : Infinity;
-  }
-  if (exponent === 0) {
-    let abs2 = ((byte0 & 3) << 8 | byte1) / (1 << 24);
-    return byte0 & 128 ? -abs2 : abs2;
-  }
-  u8Array[3] = byte0 & 128 | // sign bit
-  (exponent >> 1) + 56;
-  u8Array[2] = (byte0 & 7) << 5 | // last exponent bit and first two mantissa bits
-  byte1 >> 3;
-  u8Array[1] = byte1 << 5;
-  u8Array[0] = 0;
-  return f32Array[0];
-}
-var keyCache = new Array(4096);
-var Tag = class {
-  constructor(value, tag) {
-    this.value = value;
-    this.tag = tag;
-  }
-};
-currentExtensions[0] = (dateString) => {
-  return new Date(dateString);
-};
-currentExtensions[1] = (epochSec) => {
-  return new Date(Math.round(epochSec * 1e3));
-};
-currentExtensions[2] = (buffer) => {
-  let value = BigInt(0);
-  for (let i = 0, l = buffer.byteLength; i < l; i++) {
-    value = BigInt(buffer[i]) + (value << BigInt(8));
-  }
-  return value;
-};
-currentExtensions[3] = (buffer) => {
-  return BigInt(-1) - currentExtensions[2](buffer);
-};
-currentExtensions[4] = (fraction) => {
-  return +(fraction[1] + "e" + fraction[0]);
-};
-currentExtensions[5] = (fraction) => {
-  return fraction[1] * Math.exp(fraction[0] * Math.log(2));
-};
-var recordDefinition = (id2, structure) => {
-  id2 = id2 - 57344;
-  let existingStructure = currentStructures[id2];
-  if (existingStructure && existingStructure.isShared) {
-    (currentStructures.restoreStructures || (currentStructures.restoreStructures = []))[id2] = existingStructure;
-  }
-  currentStructures[id2] = structure;
-  structure.read = createStructureReader(structure);
-};
-currentExtensions[LEGACY_RECORD_INLINE_ID] = (data) => {
-  let length2 = data.length;
-  let structure = data[1];
-  recordDefinition(data[0], structure);
-  let object = {};
-  for (let i = 2; i < length2; i++) {
-    let key = structure[i - 2];
-    object[safeKey(key)] = data[i];
-  }
-  return object;
-};
-currentExtensions[14] = (value) => {
-  if (bundledStrings)
-    return bundledStrings[0].slice(bundledStrings.position0, bundledStrings.position0 += value);
-  return new Tag(value, 14);
-};
-currentExtensions[15] = (value) => {
-  if (bundledStrings)
-    return bundledStrings[1].slice(bundledStrings.position1, bundledStrings.position1 += value);
-  return new Tag(value, 15);
-};
-var glbl = { Error, RegExp };
-currentExtensions[27] = (data) => {
-  return (glbl[data[0]] || Error)(data[1], data[2]);
-};
-var packedTable = (read2) => {
-  if (src[position++] != 132) {
-    let error = new Error("Packed values structure must be followed by a 4 element array");
-    if (src.length < position)
-      error.incomplete = true;
-    throw error;
-  }
-  let newPackedValues = read2();
-  if (!newPackedValues || !newPackedValues.length) {
-    let error = new Error("Packed values structure must be followed by a 4 element array");
-    error.incomplete = true;
-    throw error;
-  }
-  packedValues = packedValues ? newPackedValues.concat(packedValues.slice(newPackedValues.length)) : newPackedValues;
-  packedValues.prefixes = read2();
-  packedValues.suffixes = read2();
-  return read2();
-};
-packedTable.handlesRead = true;
-currentExtensions[51] = packedTable;
-currentExtensions[PACKED_REFERENCE_TAG_ID] = (data) => {
-  if (!packedValues) {
-    if (currentDecoder.getShared)
-      loadShared();
-    else
-      return new Tag(data, PACKED_REFERENCE_TAG_ID);
-  }
-  if (typeof data == "number")
-    return packedValues[16 + (data >= 0 ? 2 * data : -2 * data - 1)];
-  let error = new Error("No support for non-integer packed references yet");
-  if (data === void 0)
-    error.incomplete = true;
-  throw error;
-};
-currentExtensions[28] = (read2) => {
-  if (!referenceMap) {
-    referenceMap = /* @__PURE__ */ new Map();
-    referenceMap.id = 0;
-  }
-  let id2 = referenceMap.id++;
-  let startingPosition = position;
-  let token = src[position];
-  let target2;
-  if (token >> 5 == 4)
-    target2 = [];
-  else
-    target2 = {};
-  let refEntry = { target: target2 };
-  referenceMap.set(id2, refEntry);
-  let targetProperties = read2();
-  if (refEntry.used) {
-    if (Object.getPrototypeOf(target2) !== Object.getPrototypeOf(targetProperties)) {
-      position = startingPosition;
-      target2 = targetProperties;
-      referenceMap.set(id2, { target: target2 });
-      targetProperties = read2();
-    }
-    return Object.assign(target2, targetProperties);
-  }
-  refEntry.target = targetProperties;
-  return targetProperties;
-};
-currentExtensions[28].handlesRead = true;
-currentExtensions[29] = (id2) => {
-  let refEntry = referenceMap.get(id2);
-  refEntry.used = true;
-  return refEntry.target;
-};
-currentExtensions[258] = (array) => new Set(array);
-(currentExtensions[259] = (read2) => {
-  if (currentDecoder.mapsAsObjects) {
-    currentDecoder.mapsAsObjects = false;
-    restoreMapsAsObject = true;
-  }
-  return read2();
-}).handlesRead = true;
-function combine(a, b) {
-  if (typeof a === "string")
-    return a + b;
-  if (a instanceof Array)
-    return a.concat(b);
-  return Object.assign({}, a, b);
-}
-function getPackedValues() {
-  if (!packedValues) {
-    if (currentDecoder.getShared)
-      loadShared();
-    else
-      throw new Error("No packed values available");
-  }
-  return packedValues;
-}
-var SHARED_DATA_TAG_ID = 1399353956;
-currentExtensionRanges.push((tag, input) => {
-  if (tag >= 225 && tag <= 255)
-    return combine(getPackedValues().prefixes[tag - 224], input);
-  if (tag >= 28704 && tag <= 32767)
-    return combine(getPackedValues().prefixes[tag - 28672], input);
-  if (tag >= 1879052288 && tag <= 2147483647)
-    return combine(getPackedValues().prefixes[tag - 1879048192], input);
-  if (tag >= 216 && tag <= 223)
-    return combine(input, getPackedValues().suffixes[tag - 216]);
-  if (tag >= 27647 && tag <= 28671)
-    return combine(input, getPackedValues().suffixes[tag - 27639]);
-  if (tag >= 1811940352 && tag <= 1879048191)
-    return combine(input, getPackedValues().suffixes[tag - 1811939328]);
-  if (tag == SHARED_DATA_TAG_ID) {
-    return {
-      packedValues,
-      structures: currentStructures.slice(0),
-      version: input
-    };
-  }
-  if (tag == 55799)
-    return input;
-});
-var isLittleEndianMachine = new Uint8Array(new Uint16Array([1]).buffer)[0] == 1;
-var typedArrays = [
-  Uint8Array,
-  Uint8ClampedArray,
-  Uint16Array,
-  Uint32Array,
-  typeof BigUint64Array == "undefined" ? { name: "BigUint64Array" } : BigUint64Array,
-  Int8Array,
-  Int16Array,
-  Int32Array,
-  typeof BigInt64Array == "undefined" ? { name: "BigInt64Array" } : BigInt64Array,
-  Float32Array,
-  Float64Array
-];
-var typedArrayTags = [64, 68, 69, 70, 71, 72, 77, 78, 79, 85, 86];
-for (let i = 0; i < typedArrays.length; i++) {
-  registerTypedArray(typedArrays[i], typedArrayTags[i]);
-}
-function registerTypedArray(TypedArray, tag) {
-  let dvMethod = "get" + TypedArray.name.slice(0, -5);
-  let bytesPerElement;
-  if (typeof TypedArray === "function")
-    bytesPerElement = TypedArray.BYTES_PER_ELEMENT;
-  else
-    TypedArray = null;
-  for (let littleEndian = 0; littleEndian < 2; littleEndian++) {
-    if (!littleEndian && bytesPerElement == 1)
-      continue;
-    let sizeShift = bytesPerElement == 2 ? 1 : bytesPerElement == 4 ? 2 : bytesPerElement == 8 ? 3 : 0;
-    currentExtensions[littleEndian ? tag : tag - 4] = bytesPerElement == 1 || littleEndian == isLittleEndianMachine ? (buffer) => {
-      if (!TypedArray)
-        throw new Error("Could not find typed array for code " + tag);
-      if (!currentDecoder.copyBuffers) {
-        if (bytesPerElement === 1 || bytesPerElement === 2 && !(buffer.byteOffset & 1) || bytesPerElement === 4 && !(buffer.byteOffset & 3) || bytesPerElement === 8 && !(buffer.byteOffset & 7))
-          return new TypedArray(buffer.buffer, buffer.byteOffset, buffer.byteLength >> sizeShift);
-      }
-      return new TypedArray(Uint8Array.prototype.slice.call(buffer, 0).buffer);
-    } : (buffer) => {
-      if (!TypedArray)
-        throw new Error("Could not find typed array for code " + tag);
-      let dv = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-      let elements = buffer.length >> sizeShift;
-      let ta = new TypedArray(elements);
-      let method = dv[dvMethod];
-      for (let i = 0; i < elements; i++) {
-        ta[i] = method.call(dv, i << sizeShift, littleEndian);
-      }
-      return ta;
-    };
-  }
-}
-function readBundleExt() {
-  let length2 = readJustLength();
-  let bundlePosition = position + read();
-  for (let i = 2; i < length2; i++) {
-    let bundleLength = readJustLength();
-    position += bundleLength;
-  }
-  let dataPosition = position;
-  position = bundlePosition;
-  bundledStrings = [readStringJS(readJustLength()), readStringJS(readJustLength())];
-  bundledStrings.position0 = 0;
-  bundledStrings.position1 = 0;
-  bundledStrings.postBundlePosition = position;
-  position = dataPosition;
-  return read();
-}
-function readJustLength() {
-  let token = src[position++] & 31;
-  if (token > 23) {
-    switch (token) {
-      case 24:
-        token = src[position++];
-        break;
-      case 25:
-        token = dataView.getUint16(position);
-        position += 2;
-        break;
-      case 26:
-        token = dataView.getUint32(position);
-        position += 4;
-        break;
-    }
-  }
-  return token;
-}
-function loadShared() {
-  if (currentDecoder.getShared) {
-    let sharedData = saveState(() => {
-      src = null;
-      return currentDecoder.getShared();
-    }) || {};
-    let updatedStructures = sharedData.structures || [];
-    currentDecoder.sharedVersion = sharedData.version;
-    packedValues = currentDecoder.sharedValues = sharedData.packedValues;
-    if (currentStructures === true)
-      currentDecoder.structures = currentStructures = updatedStructures;
-    else
-      currentStructures.splice.apply(currentStructures, [0, updatedStructures.length].concat(updatedStructures));
-  }
-}
-function saveState(callback) {
-  let savedSrcEnd = srcEnd;
-  let savedPosition = position;
-  let savedStringPosition = stringPosition;
-  let savedSrcStringStart = srcStringStart;
-  let savedSrcStringEnd = srcStringEnd;
-  let savedSrcString = srcString;
-  let savedStrings = strings;
-  let savedReferenceMap = referenceMap;
-  let savedBundledStrings = bundledStrings;
-  let savedSrc = new Uint8Array(src.slice(0, srcEnd));
-  let savedStructures = currentStructures;
-  let savedDecoder = currentDecoder;
-  let savedSequentialMode = sequentialMode;
-  let value = callback();
-  srcEnd = savedSrcEnd;
-  position = savedPosition;
-  stringPosition = savedStringPosition;
-  srcStringStart = savedSrcStringStart;
-  srcStringEnd = savedSrcStringEnd;
-  srcString = savedSrcString;
-  strings = savedStrings;
-  referenceMap = savedReferenceMap;
-  bundledStrings = savedBundledStrings;
-  src = savedSrc;
-  sequentialMode = savedSequentialMode;
-  currentStructures = savedStructures;
-  currentDecoder = savedDecoder;
-  dataView = new DataView(src.buffer, src.byteOffset, src.byteLength);
-  return value;
-}
-function clearSource() {
-  src = null;
-  referenceMap = null;
-  currentStructures = null;
-}
-var mult10 = new Array(147);
-for (let i = 0; i < 256; i++) {
-  mult10[i] = +("1e" + Math.floor(45.15 - i * 0.30103));
-}
-var defaultDecoder = new Decoder2({ useRecords: false });
-var decode = defaultDecoder.decode;
-var decodeMultiple = defaultDecoder.decodeMultiple;
-var FLOAT32_OPTIONS = {
-  NEVER: 0,
-  ALWAYS: 1,
-  DECIMAL_ROUND: 3,
-  DECIMAL_FIT: 4
-};
-
-// ../node_modules/.bun/cbor-x@1.6.0/node_modules/cbor-x/encode.js
-var textEncoder;
-try {
-  textEncoder = new TextEncoder();
-} catch (error) {
-}
-var extensions;
-var extensionClasses;
-var Buffer3 = typeof globalThis === "object" && globalThis.Buffer;
-var hasNodeBuffer = typeof Buffer3 !== "undefined";
-var ByteArrayAllocate = hasNodeBuffer ? Buffer3.allocUnsafeSlow : Uint8Array;
-var ByteArray = hasNodeBuffer ? Buffer3 : Uint8Array;
-var MAX_STRUCTURES = 256;
-var MAX_BUFFER_SIZE = hasNodeBuffer ? 4294967296 : 2144337920;
-var throwOnIterable;
-var target;
-var targetView;
-var position2 = 0;
-var safeEnd;
-var bundledStrings2 = null;
-var MAX_BUNDLE_SIZE = 61440;
-var hasNonLatin = /[\u0080-\uFFFF]/;
-var RECORD_SYMBOL = Symbol("record-id");
-var Encoder2 = class extends Decoder2 {
-  constructor(options) {
-    super(options);
-    this.offset = 0;
-    let typeBuffer;
-    let start;
-    let sharedStructures;
-    let hasSharedUpdate;
-    let structures;
-    let referenceMap2;
-    options = options || {};
-    let encodeUtf82 = ByteArray.prototype.utf8Write ? function(string, position3, maxBytes) {
-      return target.utf8Write(string, position3, maxBytes);
-    } : textEncoder && textEncoder.encodeInto ? function(string, position3) {
-      return textEncoder.encodeInto(string, target.subarray(position3)).written;
-    } : false;
-    let encoder2 = this;
-    let hasSharedStructures = options.structures || options.saveStructures;
-    let maxSharedStructures = options.maxSharedStructures;
-    if (maxSharedStructures == null)
-      maxSharedStructures = hasSharedStructures ? 128 : 0;
-    if (maxSharedStructures > 8190)
-      throw new Error("Maximum maxSharedStructure is 8190");
-    let isSequential = options.sequential;
-    if (isSequential) {
-      maxSharedStructures = 0;
-    }
-    if (!this.structures)
-      this.structures = [];
-    if (this.saveStructures)
-      this.saveShared = this.saveStructures;
-    let samplingPackedValues, packedObjectMap2, sharedValues = options.sharedValues;
-    let sharedPackedObjectMap2;
-    if (sharedValues) {
-      sharedPackedObjectMap2 = /* @__PURE__ */ Object.create(null);
-      for (let i = 0, l = sharedValues.length; i < l; i++) {
-        sharedPackedObjectMap2[sharedValues[i]] = i;
-      }
-    }
-    let recordIdsToRemove = [];
-    let transitionsCount = 0;
-    let serializationsSinceTransitionRebuild = 0;
-    this.mapEncode = function(value, encodeOptions) {
-      if (this._keyMap && !this._mapped) {
-        switch (value.constructor.name) {
-          case "Array":
-            value = value.map((r) => this.encodeKeys(r));
-            break;
-        }
-      }
-      return this.encode(value, encodeOptions);
-    };
-    this.encode = function(value, encodeOptions) {
-      if (!target) {
-        target = new ByteArrayAllocate(8192);
-        targetView = new DataView(target.buffer, 0, 8192);
-        position2 = 0;
-      }
-      safeEnd = target.length - 10;
-      if (safeEnd - position2 < 2048) {
-        target = new ByteArrayAllocate(target.length);
-        targetView = new DataView(target.buffer, 0, target.length);
-        safeEnd = target.length - 10;
-        position2 = 0;
-      } else if (encodeOptions === REUSE_BUFFER_MODE)
-        position2 = position2 + 7 & 2147483640;
-      start = position2;
-      if (encoder2.useSelfDescribedHeader) {
-        targetView.setUint32(position2, 3654940416);
-        position2 += 3;
-      }
-      referenceMap2 = encoder2.structuredClone ? /* @__PURE__ */ new Map() : null;
-      if (encoder2.bundleStrings && typeof value !== "string") {
-        bundledStrings2 = [];
-        bundledStrings2.size = Infinity;
-      } else
-        bundledStrings2 = null;
-      sharedStructures = encoder2.structures;
-      if (sharedStructures) {
-        if (sharedStructures.uninitialized) {
-          let sharedData = encoder2.getShared() || {};
-          encoder2.structures = sharedStructures = sharedData.structures || [];
-          encoder2.sharedVersion = sharedData.version;
-          let sharedValues2 = encoder2.sharedValues = sharedData.packedValues;
-          if (sharedValues2) {
-            sharedPackedObjectMap2 = {};
-            for (let i = 0, l = sharedValues2.length; i < l; i++)
-              sharedPackedObjectMap2[sharedValues2[i]] = i;
-          }
-        }
-        let sharedStructuresLength = sharedStructures.length;
-        if (sharedStructuresLength > maxSharedStructures && !isSequential)
-          sharedStructuresLength = maxSharedStructures;
-        if (!sharedStructures.transitions) {
-          sharedStructures.transitions = /* @__PURE__ */ Object.create(null);
-          for (let i = 0; i < sharedStructuresLength; i++) {
-            let keys2 = sharedStructures[i];
-            if (!keys2)
-              continue;
-            let nextTransition, transition = sharedStructures.transitions;
-            for (let j = 0, l = keys2.length; j < l; j++) {
-              if (transition[RECORD_SYMBOL] === void 0)
-                transition[RECORD_SYMBOL] = i;
-              let key = keys2[j];
-              nextTransition = transition[key];
-              if (!nextTransition) {
-                nextTransition = transition[key] = /* @__PURE__ */ Object.create(null);
-              }
-              transition = nextTransition;
-            }
-            transition[RECORD_SYMBOL] = i | 1048576;
-          }
-        }
-        if (!isSequential)
-          sharedStructures.nextId = sharedStructuresLength;
-      }
-      if (hasSharedUpdate)
-        hasSharedUpdate = false;
-      structures = sharedStructures || [];
-      packedObjectMap2 = sharedPackedObjectMap2;
-      if (options.pack) {
-        let packedValues2 = /* @__PURE__ */ new Map();
-        packedValues2.values = [];
-        packedValues2.encoder = encoder2;
-        packedValues2.maxValues = options.maxPrivatePackedValues || (sharedPackedObjectMap2 ? 16 : Infinity);
-        packedValues2.objectMap = sharedPackedObjectMap2 || false;
-        packedValues2.samplingPackedValues = samplingPackedValues;
-        findRepetitiveStrings(value, packedValues2);
-        if (packedValues2.values.length > 0) {
-          target[position2++] = 216;
-          target[position2++] = 51;
-          writeArrayHeader(4);
-          let valuesArray = packedValues2.values;
-          encode2(valuesArray);
-          writeArrayHeader(0);
-          writeArrayHeader(0);
-          packedObjectMap2 = Object.create(sharedPackedObjectMap2 || null);
-          for (let i = 0, l = valuesArray.length; i < l; i++) {
-            packedObjectMap2[valuesArray[i]] = i;
-          }
-        }
-      }
-      throwOnIterable = encodeOptions & THROW_ON_ITERABLE;
-      try {
-        if (throwOnIterable)
-          return;
-        encode2(value);
-        if (bundledStrings2) {
-          writeBundles(start, encode2);
-        }
-        encoder2.offset = position2;
-        if (referenceMap2 && referenceMap2.idsToInsert) {
-          position2 += referenceMap2.idsToInsert.length * 2;
-          if (position2 > safeEnd)
-            makeRoom(position2);
-          encoder2.offset = position2;
-          let serialized = insertIds(target.subarray(start, position2), referenceMap2.idsToInsert);
-          referenceMap2 = null;
-          return serialized;
-        }
-        if (encodeOptions & REUSE_BUFFER_MODE) {
-          target.start = start;
-          target.end = position2;
-          return target;
-        }
-        return target.subarray(start, position2);
-      } finally {
-        if (sharedStructures) {
-          if (serializationsSinceTransitionRebuild < 10)
-            serializationsSinceTransitionRebuild++;
-          if (sharedStructures.length > maxSharedStructures)
-            sharedStructures.length = maxSharedStructures;
-          if (transitionsCount > 1e4) {
-            sharedStructures.transitions = null;
-            serializationsSinceTransitionRebuild = 0;
-            transitionsCount = 0;
-            if (recordIdsToRemove.length > 0)
-              recordIdsToRemove = [];
-          } else if (recordIdsToRemove.length > 0 && !isSequential) {
-            for (let i = 0, l = recordIdsToRemove.length; i < l; i++) {
-              recordIdsToRemove[i][RECORD_SYMBOL] = void 0;
-            }
-            recordIdsToRemove = [];
-          }
-        }
-        if (hasSharedUpdate && encoder2.saveShared) {
-          if (encoder2.structures.length > maxSharedStructures) {
-            encoder2.structures = encoder2.structures.slice(0, maxSharedStructures);
-          }
-          let returnBuffer = target.subarray(start, position2);
-          if (encoder2.updateSharedData() === false)
-            return encoder2.encode(value);
-          return returnBuffer;
-        }
-        if (encodeOptions & RESET_BUFFER_MODE)
-          position2 = start;
-      }
-    };
-    this.findCommonStringsToPack = () => {
-      samplingPackedValues = /* @__PURE__ */ new Map();
-      if (!sharedPackedObjectMap2)
-        sharedPackedObjectMap2 = /* @__PURE__ */ Object.create(null);
-      return (options2) => {
-        let threshold = options2 && options2.threshold || 4;
-        let position3 = this.pack ? options2.maxPrivatePackedValues || 16 : 0;
-        if (!sharedValues)
-          sharedValues = this.sharedValues = [];
-        for (let [key, status] of samplingPackedValues) {
-          if (status.count > threshold) {
-            sharedPackedObjectMap2[key] = position3++;
-            sharedValues.push(key);
-            hasSharedUpdate = true;
-          }
-        }
-        while (this.saveShared && this.updateSharedData() === false) {
-        }
-        samplingPackedValues = null;
-      };
-    };
-    const encode2 = (value) => {
-      if (position2 > safeEnd)
-        target = makeRoom(position2);
-      var type = typeof value;
-      var length2;
-      if (type === "string") {
-        if (packedObjectMap2) {
-          let packedPosition = packedObjectMap2[value];
-          if (packedPosition >= 0) {
-            if (packedPosition < 16)
-              target[position2++] = packedPosition + 224;
-            else {
-              target[position2++] = 198;
-              if (packedPosition & 1)
-                encode2(15 - packedPosition >> 1);
-              else
-                encode2(packedPosition - 16 >> 1);
-            }
-            return;
-          } else if (samplingPackedValues && !options.pack) {
-            let status = samplingPackedValues.get(value);
-            if (status)
-              status.count++;
-            else
-              samplingPackedValues.set(value, {
-                count: 1
-              });
-          }
-        }
-        let strLength = value.length;
-        if (bundledStrings2 && strLength >= 4 && strLength < 1024) {
-          if ((bundledStrings2.size += strLength) > MAX_BUNDLE_SIZE) {
-            let extStart;
-            let maxBytes2 = (bundledStrings2[0] ? bundledStrings2[0].length * 3 + bundledStrings2[1].length : 0) + 10;
-            if (position2 + maxBytes2 > safeEnd)
-              target = makeRoom(position2 + maxBytes2);
-            target[position2++] = 217;
-            target[position2++] = 223;
-            target[position2++] = 249;
-            target[position2++] = bundledStrings2.position ? 132 : 130;
-            target[position2++] = 26;
-            extStart = position2 - start;
-            position2 += 4;
-            if (bundledStrings2.position) {
-              writeBundles(start, encode2);
-            }
-            bundledStrings2 = ["", ""];
-            bundledStrings2.size = 0;
-            bundledStrings2.position = extStart;
-          }
-          let twoByte = hasNonLatin.test(value);
-          bundledStrings2[twoByte ? 0 : 1] += value;
-          target[position2++] = twoByte ? 206 : 207;
-          encode2(strLength);
-          return;
-        }
-        let headerSize;
-        if (strLength < 32) {
-          headerSize = 1;
-        } else if (strLength < 256) {
-          headerSize = 2;
-        } else if (strLength < 65536) {
-          headerSize = 3;
-        } else {
-          headerSize = 5;
-        }
-        let maxBytes = strLength * 3;
-        if (position2 + maxBytes > safeEnd)
-          target = makeRoom(position2 + maxBytes);
-        if (strLength < 64 || !encodeUtf82) {
-          let i, c1, c2, strPosition = position2 + headerSize;
-          for (i = 0; i < strLength; i++) {
-            c1 = value.charCodeAt(i);
-            if (c1 < 128) {
-              target[strPosition++] = c1;
-            } else if (c1 < 2048) {
-              target[strPosition++] = c1 >> 6 | 192;
-              target[strPosition++] = c1 & 63 | 128;
-            } else if ((c1 & 64512) === 55296 && ((c2 = value.charCodeAt(i + 1)) & 64512) === 56320) {
-              c1 = 65536 + ((c1 & 1023) << 10) + (c2 & 1023);
-              i++;
-              target[strPosition++] = c1 >> 18 | 240;
-              target[strPosition++] = c1 >> 12 & 63 | 128;
-              target[strPosition++] = c1 >> 6 & 63 | 128;
-              target[strPosition++] = c1 & 63 | 128;
-            } else {
-              target[strPosition++] = c1 >> 12 | 224;
-              target[strPosition++] = c1 >> 6 & 63 | 128;
-              target[strPosition++] = c1 & 63 | 128;
-            }
-          }
-          length2 = strPosition - position2 - headerSize;
-        } else {
-          length2 = encodeUtf82(value, position2 + headerSize, maxBytes);
-        }
-        if (length2 < 24) {
-          target[position2++] = 96 | length2;
-        } else if (length2 < 256) {
-          if (headerSize < 2) {
-            target.copyWithin(position2 + 2, position2 + 1, position2 + 1 + length2);
-          }
-          target[position2++] = 120;
-          target[position2++] = length2;
-        } else if (length2 < 65536) {
-          if (headerSize < 3) {
-            target.copyWithin(position2 + 3, position2 + 2, position2 + 2 + length2);
-          }
-          target[position2++] = 121;
-          target[position2++] = length2 >> 8;
-          target[position2++] = length2 & 255;
-        } else {
-          if (headerSize < 5) {
-            target.copyWithin(position2 + 5, position2 + 3, position2 + 3 + length2);
-          }
-          target[position2++] = 122;
-          targetView.setUint32(position2, length2);
-          position2 += 4;
-        }
-        position2 += length2;
-      } else if (type === "number") {
-        if (!this.alwaysUseFloat && value >>> 0 === value) {
-          if (value < 24) {
-            target[position2++] = value;
-          } else if (value < 256) {
-            target[position2++] = 24;
-            target[position2++] = value;
-          } else if (value < 65536) {
-            target[position2++] = 25;
-            target[position2++] = value >> 8;
-            target[position2++] = value & 255;
-          } else {
-            target[position2++] = 26;
-            targetView.setUint32(position2, value);
-            position2 += 4;
-          }
-        } else if (!this.alwaysUseFloat && value >> 0 === value) {
-          if (value >= -24) {
-            target[position2++] = 31 - value;
-          } else if (value >= -256) {
-            target[position2++] = 56;
-            target[position2++] = ~value;
-          } else if (value >= -65536) {
-            target[position2++] = 57;
-            targetView.setUint16(position2, ~value);
-            position2 += 2;
-          } else {
-            target[position2++] = 58;
-            targetView.setUint32(position2, ~value);
-            position2 += 4;
-          }
-        } else {
-          let useFloat32;
-          if ((useFloat32 = this.useFloat32) > 0 && value < 4294967296 && value >= -2147483648) {
-            target[position2++] = 250;
-            targetView.setFloat32(position2, value);
-            let xShifted;
-            if (useFloat32 < 4 || // this checks for rounding of numbers that were encoded in 32-bit float to nearest significant decimal digit that could be preserved
-            (xShifted = value * mult10[(target[position2] & 127) << 1 | target[position2 + 1] >> 7]) >> 0 === xShifted) {
-              position2 += 4;
-              return;
-            } else
-              position2--;
-          }
-          target[position2++] = 251;
-          targetView.setFloat64(position2, value);
-          position2 += 8;
-        }
-      } else if (type === "object") {
-        if (!value)
-          target[position2++] = 246;
-        else {
-          if (referenceMap2) {
-            let referee = referenceMap2.get(value);
-            if (referee) {
-              target[position2++] = 216;
-              target[position2++] = 29;
-              target[position2++] = 25;
-              if (!referee.references) {
-                let idsToInsert = referenceMap2.idsToInsert || (referenceMap2.idsToInsert = []);
-                referee.references = [];
-                idsToInsert.push(referee);
-              }
-              referee.references.push(position2 - start);
-              position2 += 2;
-              return;
-            } else
-              referenceMap2.set(value, { offset: position2 - start });
-          }
-          let constructor = value.constructor;
-          if (constructor === Object) {
-            writeObject(value);
-          } else if (constructor === Array) {
-            length2 = value.length;
-            if (length2 < 24) {
-              target[position2++] = 128 | length2;
-            } else {
-              writeArrayHeader(length2);
-            }
-            for (let i = 0; i < length2; i++) {
-              encode2(value[i]);
-            }
-          } else if (constructor === Map) {
-            if (this.mapsAsObjects ? this.useTag259ForMaps !== false : this.useTag259ForMaps) {
-              target[position2++] = 217;
-              target[position2++] = 1;
-              target[position2++] = 3;
-            }
-            length2 = value.size;
-            if (length2 < 24) {
-              target[position2++] = 160 | length2;
-            } else if (length2 < 256) {
-              target[position2++] = 184;
-              target[position2++] = length2;
-            } else if (length2 < 65536) {
-              target[position2++] = 185;
-              target[position2++] = length2 >> 8;
-              target[position2++] = length2 & 255;
-            } else {
-              target[position2++] = 186;
-              targetView.setUint32(position2, length2);
-              position2 += 4;
-            }
-            if (encoder2.keyMap) {
-              for (let [key, entryValue] of value) {
-                encode2(encoder2.encodeKey(key));
-                encode2(entryValue);
-              }
-            } else {
-              for (let [key, entryValue] of value) {
-                encode2(key);
-                encode2(entryValue);
-              }
-            }
-          } else {
-            for (let i = 0, l = extensions.length; i < l; i++) {
-              let extensionClass = extensionClasses[i];
-              if (value instanceof extensionClass) {
-                let extension = extensions[i];
-                let tag = extension.tag;
-                if (tag == void 0)
-                  tag = extension.getTag && extension.getTag.call(this, value);
-                if (tag < 24) {
-                  target[position2++] = 192 | tag;
-                } else if (tag < 256) {
-                  target[position2++] = 216;
-                  target[position2++] = tag;
-                } else if (tag < 65536) {
-                  target[position2++] = 217;
-                  target[position2++] = tag >> 8;
-                  target[position2++] = tag & 255;
-                } else if (tag > -1) {
-                  target[position2++] = 218;
-                  targetView.setUint32(position2, tag);
-                  position2 += 4;
-                }
-                extension.encode.call(this, value, encode2, makeRoom);
-                return;
-              }
-            }
-            if (value[Symbol.iterator]) {
-              if (throwOnIterable) {
-                let error = new Error("Iterable should be serialized as iterator");
-                error.iteratorNotHandled = true;
-                throw error;
-              }
-              target[position2++] = 159;
-              for (let entry of value) {
-                encode2(entry);
-              }
-              target[position2++] = 255;
-              return;
-            }
-            if (value[Symbol.asyncIterator] || isBlob(value)) {
-              let error = new Error("Iterable/blob should be serialized as iterator");
-              error.iteratorNotHandled = true;
-              throw error;
-            }
-            if (this.useToJSON && value.toJSON) {
-              const json = value.toJSON();
-              if (json !== value)
-                return encode2(json);
-            }
-            writeObject(value);
-          }
-        }
-      } else if (type === "boolean") {
-        target[position2++] = value ? 245 : 244;
-      } else if (type === "bigint") {
-        if (value < BigInt(1) << BigInt(64) && value >= 0) {
-          target[position2++] = 27;
-          targetView.setBigUint64(position2, value);
-        } else if (value > -(BigInt(1) << BigInt(64)) && value < 0) {
-          target[position2++] = 59;
-          targetView.setBigUint64(position2, -value - BigInt(1));
-        } else {
-          if (this.largeBigIntToFloat) {
-            target[position2++] = 251;
-            targetView.setFloat64(position2, Number(value));
-          } else {
-            if (value >= BigInt(0))
-              target[position2++] = 194;
-            else {
-              target[position2++] = 195;
-              value = BigInt(-1) - value;
-            }
-            let bytes = [];
-            while (value) {
-              bytes.push(Number(value & BigInt(255)));
-              value >>= BigInt(8);
-            }
-            writeBuffer(new Uint8Array(bytes.reverse()), makeRoom);
-            return;
-          }
-        }
-        position2 += 8;
-      } else if (type === "undefined") {
-        target[position2++] = 247;
-      } else {
-        throw new Error("Unknown type: " + type);
-      }
-    };
-    const writeObject = this.useRecords === false ? this.variableMapSize ? (object) => {
-      let keys2 = Object.keys(object);
-      let vals = Object.values(object);
-      let length2 = keys2.length;
-      if (length2 < 24) {
-        target[position2++] = 160 | length2;
-      } else if (length2 < 256) {
-        target[position2++] = 184;
-        target[position2++] = length2;
-      } else if (length2 < 65536) {
-        target[position2++] = 185;
-        target[position2++] = length2 >> 8;
-        target[position2++] = length2 & 255;
-      } else {
-        target[position2++] = 186;
-        targetView.setUint32(position2, length2);
-        position2 += 4;
-      }
-      let key;
-      if (encoder2.keyMap) {
-        for (let i = 0; i < length2; i++) {
-          encode2(encoder2.encodeKey(keys2[i]));
-          encode2(vals[i]);
-        }
-      } else {
-        for (let i = 0; i < length2; i++) {
-          encode2(keys2[i]);
-          encode2(vals[i]);
-        }
-      }
-    } : (object) => {
-      target[position2++] = 185;
-      let objectOffset = position2 - start;
-      position2 += 2;
-      let size2 = 0;
-      if (encoder2.keyMap) {
-        for (let key in object)
-          if (typeof object.hasOwnProperty !== "function" || object.hasOwnProperty(key)) {
-            encode2(encoder2.encodeKey(key));
-            encode2(object[key]);
-            size2++;
-          }
-      } else {
-        for (let key in object)
-          if (typeof object.hasOwnProperty !== "function" || object.hasOwnProperty(key)) {
-            encode2(key);
-            encode2(object[key]);
-            size2++;
-          }
-      }
-      target[objectOffset++ + start] = size2 >> 8;
-      target[objectOffset + start] = size2 & 255;
-    } : (object, skipValues) => {
-      let nextTransition, transition = structures.transitions || (structures.transitions = /* @__PURE__ */ Object.create(null));
-      let newTransitions = 0;
-      let length2 = 0;
-      let parentRecordId;
-      let keys2;
-      if (this.keyMap) {
-        keys2 = Object.keys(object).map((k) => this.encodeKey(k));
-        length2 = keys2.length;
-        for (let i = 0; i < length2; i++) {
-          let key = keys2[i];
-          nextTransition = transition[key];
-          if (!nextTransition) {
-            nextTransition = transition[key] = /* @__PURE__ */ Object.create(null);
-            newTransitions++;
-          }
-          transition = nextTransition;
-        }
-      } else {
-        for (let key in object)
-          if (typeof object.hasOwnProperty !== "function" || object.hasOwnProperty(key)) {
-            nextTransition = transition[key];
-            if (!nextTransition) {
-              if (transition[RECORD_SYMBOL] & 1048576) {
-                parentRecordId = transition[RECORD_SYMBOL] & 65535;
-              }
-              nextTransition = transition[key] = /* @__PURE__ */ Object.create(null);
-              newTransitions++;
-            }
-            transition = nextTransition;
-            length2++;
-          }
-      }
-      let recordId = transition[RECORD_SYMBOL];
-      if (recordId !== void 0) {
-        recordId &= 65535;
-        target[position2++] = 217;
-        target[position2++] = recordId >> 8 | 224;
-        target[position2++] = recordId & 255;
-      } else {
-        if (!keys2)
-          keys2 = transition.__keys__ || (transition.__keys__ = Object.keys(object));
-        if (parentRecordId === void 0) {
-          recordId = structures.nextId++;
-          if (!recordId) {
-            recordId = 0;
-            structures.nextId = 1;
-          }
-          if (recordId >= MAX_STRUCTURES) {
-            structures.nextId = (recordId = maxSharedStructures) + 1;
-          }
-        } else {
-          recordId = parentRecordId;
-        }
-        structures[recordId] = keys2;
-        if (recordId < maxSharedStructures) {
-          target[position2++] = 217;
-          target[position2++] = recordId >> 8 | 224;
-          target[position2++] = recordId & 255;
-          transition = structures.transitions;
-          for (let i = 0; i < length2; i++) {
-            if (transition[RECORD_SYMBOL] === void 0 || transition[RECORD_SYMBOL] & 1048576)
-              transition[RECORD_SYMBOL] = recordId;
-            transition = transition[keys2[i]];
-          }
-          transition[RECORD_SYMBOL] = recordId | 1048576;
-          hasSharedUpdate = true;
-        } else {
-          transition[RECORD_SYMBOL] = recordId;
-          targetView.setUint32(position2, 3655335680);
-          position2 += 3;
-          if (newTransitions)
-            transitionsCount += serializationsSinceTransitionRebuild * newTransitions;
-          if (recordIdsToRemove.length >= MAX_STRUCTURES - maxSharedStructures)
-            recordIdsToRemove.shift()[RECORD_SYMBOL] = void 0;
-          recordIdsToRemove.push(transition);
-          writeArrayHeader(length2 + 2);
-          encode2(57344 + recordId);
-          encode2(keys2);
-          if (skipValues)
-            return;
-          for (let key in object)
-            if (typeof object.hasOwnProperty !== "function" || object.hasOwnProperty(key))
-              encode2(object[key]);
-          return;
-        }
-      }
-      if (length2 < 24) {
-        target[position2++] = 128 | length2;
-      } else {
-        writeArrayHeader(length2);
-      }
-      if (skipValues)
-        return;
-      for (let key in object)
-        if (typeof object.hasOwnProperty !== "function" || object.hasOwnProperty(key))
-          encode2(object[key]);
-    };
-    const makeRoom = (end) => {
-      let newSize;
-      if (end > 16777216) {
-        if (end - start > MAX_BUFFER_SIZE)
-          throw new Error("Encoded buffer would be larger than maximum buffer size");
-        newSize = Math.min(
-          MAX_BUFFER_SIZE,
-          Math.round(Math.max((end - start) * (end > 67108864 ? 1.25 : 2), 4194304) / 4096) * 4096
-        );
-      } else
-        newSize = (Math.max(end - start << 2, target.length - 1) >> 12) + 1 << 12;
-      let newBuffer = new ByteArrayAllocate(newSize);
-      targetView = new DataView(newBuffer.buffer, 0, newSize);
-      if (target.copy)
-        target.copy(newBuffer, 0, start, end);
-      else
-        newBuffer.set(target.slice(start, end));
-      position2 -= start;
-      start = 0;
-      safeEnd = newBuffer.length - 10;
-      return target = newBuffer;
-    };
-    let chunkThreshold = 100;
-    let continuedChunkThreshold = 1e3;
-    this.encodeAsIterable = function(value, options2) {
-      return startEncoding(value, options2, encodeObjectAsIterable);
-    };
-    this.encodeAsAsyncIterable = function(value, options2) {
-      return startEncoding(value, options2, encodeObjectAsAsyncIterable);
-    };
-    function* encodeObjectAsIterable(object, iterateProperties, finalIterable) {
-      let constructor = object.constructor;
-      if (constructor === Object) {
-        let useRecords = encoder2.useRecords !== false;
-        if (useRecords)
-          writeObject(object, true);
-        else
-          writeEntityLength(Object.keys(object).length, 160);
-        for (let key in object) {
-          let value = object[key];
-          if (!useRecords)
-            encode2(key);
-          if (value && typeof value === "object") {
-            if (iterateProperties[key])
-              yield* encodeObjectAsIterable(value, iterateProperties[key]);
-            else
-              yield* tryEncode(value, iterateProperties, key);
-          } else
-            encode2(value);
-        }
-      } else if (constructor === Array) {
-        let length2 = object.length;
-        writeArrayHeader(length2);
-        for (let i = 0; i < length2; i++) {
-          let value = object[i];
-          if (value && (typeof value === "object" || position2 - start > chunkThreshold)) {
-            if (iterateProperties.element)
-              yield* encodeObjectAsIterable(value, iterateProperties.element);
-            else
-              yield* tryEncode(value, iterateProperties, "element");
-          } else
-            encode2(value);
-        }
-      } else if (object[Symbol.iterator] && !object.buffer) {
-        target[position2++] = 159;
-        for (let value of object) {
-          if (value && (typeof value === "object" || position2 - start > chunkThreshold)) {
-            if (iterateProperties.element)
-              yield* encodeObjectAsIterable(value, iterateProperties.element);
-            else
-              yield* tryEncode(value, iterateProperties, "element");
-          } else
-            encode2(value);
-        }
-        target[position2++] = 255;
-      } else if (isBlob(object)) {
-        writeEntityLength(object.size, 64);
-        yield target.subarray(start, position2);
-        yield object;
-        restartEncoding();
-      } else if (object[Symbol.asyncIterator]) {
-        target[position2++] = 159;
-        yield target.subarray(start, position2);
-        yield object;
-        restartEncoding();
-        target[position2++] = 255;
-      } else {
-        encode2(object);
-      }
-      if (finalIterable && position2 > start)
-        yield target.subarray(start, position2);
-      else if (position2 - start > chunkThreshold) {
-        yield target.subarray(start, position2);
-        restartEncoding();
-      }
-    }
-    function* tryEncode(value, iterateProperties, key) {
-      let restart = position2 - start;
-      try {
-        encode2(value);
-        if (position2 - start > chunkThreshold) {
-          yield target.subarray(start, position2);
-          restartEncoding();
-        }
-      } catch (error) {
-        if (error.iteratorNotHandled) {
-          iterateProperties[key] = {};
-          position2 = start + restart;
-          yield* encodeObjectAsIterable.call(this, value, iterateProperties[key]);
-        } else
-          throw error;
-      }
-    }
-    function restartEncoding() {
-      chunkThreshold = continuedChunkThreshold;
-      encoder2.encode(null, THROW_ON_ITERABLE);
-    }
-    function startEncoding(value, options2, encodeIterable) {
-      if (options2 && options2.chunkThreshold)
-        chunkThreshold = continuedChunkThreshold = options2.chunkThreshold;
-      else
-        chunkThreshold = 100;
-      if (value && typeof value === "object") {
-        encoder2.encode(null, THROW_ON_ITERABLE);
-        return encodeIterable(value, encoder2.iterateProperties || (encoder2.iterateProperties = {}), true);
-      }
-      return [encoder2.encode(value)];
-    }
-    async function* encodeObjectAsAsyncIterable(value, iterateProperties) {
-      for (let encodedValue of encodeObjectAsIterable(value, iterateProperties, true)) {
-        let constructor = encodedValue.constructor;
-        if (constructor === ByteArray || constructor === Uint8Array)
-          yield encodedValue;
-        else if (isBlob(encodedValue)) {
-          let reader = encodedValue.stream().getReader();
-          let next;
-          while (!(next = await reader.read()).done) {
-            yield next.value;
-          }
-        } else if (encodedValue[Symbol.asyncIterator]) {
-          for await (let asyncValue of encodedValue) {
-            restartEncoding();
-            if (asyncValue)
-              yield* encodeObjectAsAsyncIterable(asyncValue, iterateProperties.async || (iterateProperties.async = {}));
-            else
-              yield encoder2.encode(asyncValue);
-          }
-        } else {
-          yield encodedValue;
-        }
-      }
-    }
-  }
-  useBuffer(buffer) {
-    target = buffer;
-    targetView = new DataView(target.buffer, target.byteOffset, target.byteLength);
-    position2 = 0;
-  }
-  clearSharedData() {
-    if (this.structures)
-      this.structures = [];
-    if (this.sharedValues)
-      this.sharedValues = void 0;
-  }
-  updateSharedData() {
-    let lastVersion = this.sharedVersion || 0;
-    this.sharedVersion = lastVersion + 1;
-    let structuresCopy = this.structures.slice(0);
-    let sharedData = new SharedData(structuresCopy, this.sharedValues, this.sharedVersion);
-    let saveResults = this.saveShared(
-      sharedData,
-      (existingShared) => (existingShared && existingShared.version || 0) == lastVersion
-    );
-    if (saveResults === false) {
-      sharedData = this.getShared() || {};
-      this.structures = sharedData.structures || [];
-      this.sharedValues = sharedData.packedValues;
-      this.sharedVersion = sharedData.version;
-      this.structures.nextId = this.structures.length;
-    } else {
-      structuresCopy.forEach((structure, i) => this.structures[i] = structure);
-    }
-    return saveResults;
-  }
-};
-function writeEntityLength(length2, majorValue) {
-  if (length2 < 24)
-    target[position2++] = majorValue | length2;
-  else if (length2 < 256) {
-    target[position2++] = majorValue | 24;
-    target[position2++] = length2;
-  } else if (length2 < 65536) {
-    target[position2++] = majorValue | 25;
-    target[position2++] = length2 >> 8;
-    target[position2++] = length2 & 255;
-  } else {
-    target[position2++] = majorValue | 26;
-    targetView.setUint32(position2, length2);
-    position2 += 4;
-  }
-}
-var SharedData = class {
-  constructor(structures, values, version) {
-    this.structures = structures;
-    this.packedValues = values;
-    this.version = version;
-  }
-};
-function writeArrayHeader(length2) {
-  if (length2 < 24)
-    target[position2++] = 128 | length2;
-  else if (length2 < 256) {
-    target[position2++] = 152;
-    target[position2++] = length2;
-  } else if (length2 < 65536) {
-    target[position2++] = 153;
-    target[position2++] = length2 >> 8;
-    target[position2++] = length2 & 255;
-  } else {
-    target[position2++] = 154;
-    targetView.setUint32(position2, length2);
-    position2 += 4;
-  }
-}
-var BlobConstructor = typeof Blob === "undefined" ? function() {
-} : Blob;
-function isBlob(object) {
-  if (object instanceof BlobConstructor)
-    return true;
-  let tag = object[Symbol.toStringTag];
-  return tag === "Blob" || tag === "File";
-}
-function findRepetitiveStrings(value, packedValues2) {
-  switch (typeof value) {
-    case "string":
-      if (value.length > 3) {
-        if (packedValues2.objectMap[value] > -1 || packedValues2.values.length >= packedValues2.maxValues)
-          return;
-        let packedStatus = packedValues2.get(value);
-        if (packedStatus) {
-          if (++packedStatus.count == 2) {
-            packedValues2.values.push(value);
-          }
-        } else {
-          packedValues2.set(value, {
-            count: 1
-          });
-          if (packedValues2.samplingPackedValues) {
-            let status = packedValues2.samplingPackedValues.get(value);
-            if (status)
-              status.count++;
-            else
-              packedValues2.samplingPackedValues.set(value, {
-                count: 1
-              });
-          }
-        }
-      }
-      break;
-    case "object":
-      if (value) {
-        if (value instanceof Array) {
-          for (let i = 0, l = value.length; i < l; i++) {
-            findRepetitiveStrings(value[i], packedValues2);
-          }
-        } else {
-          let includeKeys = !packedValues2.encoder.useRecords;
-          for (var key in value) {
-            if (value.hasOwnProperty(key)) {
-              if (includeKeys)
-                findRepetitiveStrings(key, packedValues2);
-              findRepetitiveStrings(value[key], packedValues2);
-            }
-          }
-        }
-      }
-      break;
-    case "function":
-      console.log(value);
-  }
-}
-var isLittleEndianMachine2 = new Uint8Array(new Uint16Array([1]).buffer)[0] == 1;
-extensionClasses = [
-  Date,
-  Set,
-  Error,
-  RegExp,
-  Tag,
-  ArrayBuffer,
-  Uint8Array,
-  Uint8ClampedArray,
-  Uint16Array,
-  Uint32Array,
-  typeof BigUint64Array == "undefined" ? function() {
-  } : BigUint64Array,
-  Int8Array,
-  Int16Array,
-  Int32Array,
-  typeof BigInt64Array == "undefined" ? function() {
-  } : BigInt64Array,
-  Float32Array,
-  Float64Array,
-  SharedData
-];
-extensions = [
-  {
-    // Date
-    tag: 1,
-    encode(date, encode2) {
-      let seconds = date.getTime() / 1e3;
-      if ((this.useTimestamp32 || date.getMilliseconds() === 0) && seconds >= 0 && seconds < 4294967296) {
-        target[position2++] = 26;
-        targetView.setUint32(position2, seconds);
-        position2 += 4;
-      } else {
-        target[position2++] = 251;
-        targetView.setFloat64(position2, seconds);
-        position2 += 8;
-      }
-    }
-  },
-  {
-    // Set
-    tag: 258,
-    // https://github.com/input-output-hk/cbor-sets-spec/blob/master/CBOR_SETS.md
-    encode(set, encode2) {
-      let array = Array.from(set);
-      encode2(array);
-    }
-  },
-  {
-    // Error
-    tag: 27,
-    // http://cbor.schmorp.de/generic-object
-    encode(error, encode2) {
-      encode2([error.name, error.message]);
-    }
-  },
-  {
-    // RegExp
-    tag: 27,
-    // http://cbor.schmorp.de/generic-object
-    encode(regex, encode2) {
-      encode2(["RegExp", regex.source, regex.flags]);
-    }
-  },
-  {
-    // Tag
-    getTag(tag) {
-      return tag.tag;
-    },
-    encode(tag, encode2) {
-      encode2(tag.value);
-    }
-  },
-  {
-    // ArrayBuffer
-    encode(arrayBuffer, encode2, makeRoom) {
-      writeBuffer(arrayBuffer, makeRoom);
-    }
-  },
-  {
-    // Uint8Array
-    getTag(typedArray) {
-      if (typedArray.constructor === Uint8Array) {
-        if (this.tagUint8Array || hasNodeBuffer && this.tagUint8Array !== false)
-          return 64;
-      }
-    },
-    encode(typedArray, encode2, makeRoom) {
-      writeBuffer(typedArray, makeRoom);
-    }
-  },
-  typedArrayEncoder(68, 1),
-  typedArrayEncoder(69, 2),
-  typedArrayEncoder(70, 4),
-  typedArrayEncoder(71, 8),
-  typedArrayEncoder(72, 1),
-  typedArrayEncoder(77, 2),
-  typedArrayEncoder(78, 4),
-  typedArrayEncoder(79, 8),
-  typedArrayEncoder(85, 4),
-  typedArrayEncoder(86, 8),
-  {
-    encode(sharedData, encode2) {
-      let packedValues2 = sharedData.packedValues || [];
-      let sharedStructures = sharedData.structures || [];
-      if (packedValues2.values.length > 0) {
-        target[position2++] = 216;
-        target[position2++] = 51;
-        writeArrayHeader(4);
-        let valuesArray = packedValues2.values;
-        encode2(valuesArray);
-        writeArrayHeader(0);
-        writeArrayHeader(0);
-        packedObjectMap = Object.create(sharedPackedObjectMap || null);
-        for (let i = 0, l = valuesArray.length; i < l; i++) {
-          packedObjectMap[valuesArray[i]] = i;
-        }
-      }
-      if (sharedStructures) {
-        targetView.setUint32(position2, 3655335424);
-        position2 += 3;
-        let definitions = sharedStructures.slice(0);
-        definitions.unshift(57344);
-        definitions.push(new Tag(sharedData.version, 1399353956));
-        encode2(definitions);
-      } else
-        encode2(new Tag(sharedData.version, 1399353956));
-    }
-  }
-];
-function typedArrayEncoder(tag, size2) {
-  if (!isLittleEndianMachine2 && size2 > 1)
-    tag -= 4;
-  return {
-    tag,
-    encode: function writeExtBuffer(typedArray, encode2) {
-      let length2 = typedArray.byteLength;
-      let offset = typedArray.byteOffset || 0;
-      let buffer = typedArray.buffer || typedArray;
-      encode2(hasNodeBuffer ? Buffer3.from(buffer, offset, length2) : new Uint8Array(buffer, offset, length2));
-    }
-  };
-}
-function writeBuffer(buffer, makeRoom) {
-  let length2 = buffer.byteLength;
-  if (length2 < 24) {
-    target[position2++] = 64 + length2;
-  } else if (length2 < 256) {
-    target[position2++] = 88;
-    target[position2++] = length2;
-  } else if (length2 < 65536) {
-    target[position2++] = 89;
-    target[position2++] = length2 >> 8;
-    target[position2++] = length2 & 255;
-  } else {
-    target[position2++] = 90;
-    targetView.setUint32(position2, length2);
-    position2 += 4;
-  }
-  if (position2 + length2 >= target.length) {
-    makeRoom(position2 + length2);
-  }
-  target.set(buffer.buffer ? buffer : new Uint8Array(buffer), position2);
-  position2 += length2;
-}
-function insertIds(serialized, idsToInsert) {
-  let nextId;
-  let distanceToMove = idsToInsert.length * 2;
-  let lastEnd = serialized.length - distanceToMove;
-  idsToInsert.sort((a, b) => a.offset > b.offset ? 1 : -1);
-  for (let id2 = 0; id2 < idsToInsert.length; id2++) {
-    let referee = idsToInsert[id2];
-    referee.id = id2;
-    for (let position3 of referee.references) {
-      serialized[position3++] = id2 >> 8;
-      serialized[position3] = id2 & 255;
-    }
-  }
-  while (nextId = idsToInsert.pop()) {
-    let offset = nextId.offset;
-    serialized.copyWithin(offset + distanceToMove, offset, lastEnd);
-    distanceToMove -= 2;
-    let position3 = offset + distanceToMove;
-    serialized[position3++] = 216;
-    serialized[position3++] = 28;
-    lastEnd = offset;
-  }
-  return serialized;
-}
-function writeBundles(start, encode2) {
-  targetView.setUint32(bundledStrings2.position + start, position2 - bundledStrings2.position - start + 1);
-  let writeStrings = bundledStrings2;
-  bundledStrings2 = null;
-  encode2(writeStrings[0]);
-  encode2(writeStrings[1]);
-}
-var defaultEncoder = new Encoder2({ useRecords: false });
-var encode = defaultEncoder.encode;
-var encodeAsIterable = defaultEncoder.encodeAsIterable;
-var encodeAsAsyncIterable = defaultEncoder.encodeAsAsyncIterable;
-var { NEVER: NEVER2, ALWAYS, DECIMAL_ROUND, DECIMAL_FIT } = FLOAT32_OPTIONS;
-var REUSE_BUFFER_MODE = 512;
-var RESET_BUFFER_MODE = 1024;
-var THROW_ON_ITERABLE = 2048;
-
-// ../shared/src/protocol/codec.ts
-var encoder = new Encoder2({
-  useRecords: false,
-  structuredClone: true
-});
-function encodeMessage(message) {
-  ProtocolMessageSchema.parse(message);
-  return encoder.encode(message);
-}
-function decodeMessage(data) {
-  const decoded = encoder.decode(data);
-  return ProtocolMessageSchema.parse(decoded);
-}
-function parseBinaryMessage(data) {
-  try {
-    if (typeof data === "string")
-      return null;
-    const buffer = data instanceof Uint8Array ? data : new Uint8Array(data);
-    return decodeMessage(buffer);
-  } catch (err) {
-    console.error("[Codec] Failed to decode binary message:", err);
-    return null;
-  }
-}
-function serializeMessage(message) {
-  return encodeMessage(message);
-}
 
 // src/sync/hub-client.ts
-var import_obsidian4 = require("obsidian");
 var HubClient = class {
   constructor(plugin) {
     __publicField(this, "plugin");
@@ -50120,13 +50507,15 @@ var HubClient = class {
     __publicField(this, "reconnectTimeout");
     __publicField(this, "heartbeatInterval");
     __publicField(this, "reconnectDelay", 1e3);
+    __publicField(this, "reconnectAttempt", 0);
     __publicField(this, "MAX_RECONNECT_DELAY", 1e3 * 60 * 5);
     // 5 minutes
     __publicField(this, "HEARTBEAT_INTERVAL_MS", 3e4);
     // 30s
-    __publicField(this, "updateBuffer", []);
+    __publicField(this, "syncBuffer", new SyncBuffer());
     __publicField(this, "pendingRequests", /* @__PURE__ */ new Map());
     this.plugin = plugin;
+    this.syncBuffer.init().catch(console.error);
   }
   connect() {
     const { syncHubUrl, sharedSecret, vaultId } = this.plugin.settings;
@@ -50142,25 +50531,28 @@ var HubClient = class {
       this.ws = new WebSocket(url.toString());
       this.ws.binaryType = "arraybuffer";
       this.ws.onopen = () => {
-        console.log("[VaultSync/Hub] Connection opened. Authenticating...");
+        this.plugin.logSyncEvent("pull", "WebSocket connection opened", "info");
+        console.log("[VaultSync/WS] Connected");
         this.reconnectDelay = 1e3;
+        this.reconnectAttempt = 0;
         this.startHeartbeat();
         this.authenticate();
       };
       this.ws.onmessage = (event) => {
         this.handleMessage(event.data);
       };
-      this.ws.onclose = () => {
-        console.log("[VaultSync/Hub] Connection closed. Reconnecting...");
+      this.ws.onclose = (event) => {
+        this.reconnectAttempt++;
+        console.log(`[VaultSync/WS] Closed \u2014 scheduling reconnect  attempt=${this.reconnectAttempt}  delayMs=${this.reconnectDelay}`);
         this.authenticated = false;
         this.stopHeartbeat();
         this.scheduleReconnect();
       };
       this.ws.onerror = (err) => {
-        console.error("[VaultSync/Hub] WebSocket error:", err);
+        console.error("[VaultSync/WS] WebSocket error:", err);
       };
     } catch (e) {
-      console.error("[VaultSync/Hub] Invalid Sync Hub URL", e);
+      console.error("[VaultSync/WS] Invalid Sync Hub URL", e);
     }
   }
   authenticate() {
@@ -50182,40 +50574,44 @@ var HubClient = class {
       deviceName: this.plugin.settings.deviceName
     };
     this.ws.send(serializeMessage(reg));
+    console.log(`[VaultSync/WS] Registered  vault=${this.plugin.settings.vaultId}  device=${this.plugin.settings.deviceName}`);
     this.flushBuffer();
   }
-  flushBuffer() {
+  async flushBuffer() {
     if (!this.authenticated || !this.ws || this.ws.readyState !== WebSocket.OPEN)
       return;
-    if (this.updateBuffer.length > 0) {
-      console.log(`[VaultSync/Hub] Flushing ${this.updateBuffer.length} buffered updates...`);
-      for (const { file, update } of this.updateBuffer) {
-        this.sendUpdate(file, update);
+    const updates = await this.syncBuffer.getAll();
+    if (updates.length > 0) {
+      console.log(`[VaultSync/Hub] Flushing ${updates.length} persistent buffered updates...`);
+      for (const { id: id2, file, update } of updates) {
+        const msg = { type: "crdt_update", file, update };
+        this.ws.send(serializeMessage(msg));
+        await this.syncBuffer.remove(id2);
       }
-      this.updateBuffer = [];
     }
   }
   handleMessage(data) {
     const msg = parseBinaryMessage(data);
     if (!msg)
       return;
+    const bytes = data instanceof ArrayBuffer ? data.byteLength : typeof data === "string" ? data.length : 0;
     switch (msg.type) {
       case "auth_result":
         if (msg.success) {
-          console.log("[VaultSync/Hub] Authenticated successfully.");
+          console.log("[VaultSync/WS] Authenticated");
           this.authenticated = true;
           this.register();
         } else {
-          console.error("[VaultSync/Hub] Authentication failed:", msg.message);
-          new import_obsidian4.Notice(`Sync Hub Auth Failed: ${msg.message}`);
+          console.error(`[VaultSync/WS] Auth failed  reason=${msg.message}`);
+          new import_obsidian6.Notice(`Sync Hub Auth Failed: ${msg.message}`);
         }
         break;
       case "crdt_update":
-        console.log(`[VaultSync/Hub] Received update from hub for ${msg.file}`);
+        console.log(`[VaultSync/WS] Update received  path=${msg.file}  bytes=${bytes}`);
         this.plugin.crdtManager.applyRemoteUpdate(msg.file, msg.update, "sync-hub");
         break;
       case "crdt_full_state":
-        console.log(`[VaultSync/Hub] Received full state for ${msg.file}`);
+        console.log(`[VaultSync/WS] Full state received  path=${msg.file}  bytes=${bytes}`);
         const resolve2 = this.pendingRequests.get(msg.file);
         if (resolve2) {
           resolve2(new Uint8Array(msg.state));
@@ -50223,18 +50619,17 @@ var HubClient = class {
         }
         break;
       case "peer_info":
-        console.log(`[VaultSync/Hub] Peer info update: ${msg.peers.length} peers online`);
+        console.log(`[VaultSync/WS] Peer info received  count=${msg.peers.length}`);
         break;
       case "alert":
-        new import_obsidian4.Notice(`Sync Hub Alert: ${msg.message}`);
+        this.plugin.logSyncEvent("alert", `Hub Alert: ${msg.message}`, "warn", `Kind: ${msg.kind}`);
+        new import_obsidian6.Notice(`Sync Hub Alert: ${msg.message}`);
         break;
     }
   }
-  sendUpdate(file, update) {
+  async sendUpdate(file, update) {
     if (!this.ws || !this.authenticated || this.ws.readyState !== WebSocket.OPEN) {
-      this.updateBuffer.push({ file, update });
-      if (this.updateBuffer.length > 500)
-        this.updateBuffer.shift();
+      await this.syncBuffer.push(file, update);
       return;
     }
     const msg = {
@@ -50242,7 +50637,9 @@ var HubClient = class {
       file,
       update
     };
-    this.ws.send(serializeMessage(msg));
+    const data = serializeMessage(msg);
+    this.ws.send(data);
+    console.log(`[VaultSync/WS] Update broadcast  path=${file}  bytes=${data.byteLength}`);
   }
   async requestFullState(file) {
     if (!this.ws || !this.authenticated || this.ws.readyState !== WebSocket.OPEN) {
@@ -50297,7 +50694,7 @@ var HubClient = class {
 };
 
 // src/sync/onboarding-manager.ts
-var import_obsidian5 = require("obsidian");
+var import_obsidian7 = require("obsidian");
 var OnboardingManager = class {
   constructor(plugin) {
     __publicField(this, "plugin");
@@ -50319,7 +50716,7 @@ var OnboardingManager = class {
   async bootstrapFirstDevice() {
     const files = this.plugin.app.vault.getFiles();
     const editableFiles = files.filter((f) => this.isEditable(f));
-    new import_obsidian5.Notice(`Bootstrapping CRDT state for ${editableFiles.length} files...`);
+    new import_obsidian7.Notice(`Bootstrapping CRDT state for ${editableFiles.length} files...`);
     let count2 = 0;
     for (const file of editableFiles) {
       const content = await this.plugin.app.vault.read(file);
@@ -50329,12 +50726,12 @@ var OnboardingManager = class {
         await new Promise((resolve2) => setTimeout(resolve2, 0));
       }
     }
-    new import_obsidian5.Notice("Authoritative CRDT state generated successfully.");
+    new import_obsidian7.Notice("Authoritative CRDT state generated successfully.");
   }
   async onboardNewDevice() {
     const files = this.plugin.app.vault.getFiles();
     const editableFiles = files.filter((f) => this.isEditable(f));
-    new import_obsidian5.Notice(`Requesting CRDT state from hub for ${editableFiles.length} files...`);
+    new import_obsidian7.Notice(`Requesting CRDT state from hub for ${editableFiles.length} files...`);
   }
   isEditable(file) {
     const ext = file.extension.toLowerCase();
@@ -50862,6 +51259,11 @@ var yCollab = (ytext, awareness, { undoManager = new UndoManager(ytext) } = {}) 
   return plugins;
 };
 
+// src/ui/editor/collab.ts
+function createYCollabExtension(ytext, awareness, undoManager) {
+  return yCollab(ytext, awareness, { undoManager });
+}
+
 // src/main.ts
 var import_state = require("@codemirror/state");
 var DEFAULT_SETTINGS = {
@@ -50875,7 +51277,7 @@ var DEFAULT_SETTINGS = {
   autoPullIntervalMin: 5,
   allowGitOnCellular: false
 };
-var VaultSyncPlugin = class extends import_obsidian6.Plugin {
+var VaultSyncPlugin = class extends import_obsidian8.Plugin {
   constructor(app, manifest) {
     super(app, manifest);
     __publicField(this, "settings", DEFAULT_SETTINGS);
@@ -50887,6 +51289,9 @@ var VaultSyncPlugin = class extends import_obsidian6.Plugin {
     __publicField(this, "hubClient");
     __publicField(this, "onboardingManager");
     __publicField(this, "collabCompartment", new import_state.Compartment());
+    // Sync Log storage
+    __publicField(this, "syncLogs", []);
+    __publicField(this, "MAX_LOGS", 500);
     this.signalingManager = new SignalingManager(this);
     this.hubClient = new HubClient(this);
     this.orchestrator = new SyncOrchestrator(this);
@@ -50901,42 +51306,32 @@ var VaultSyncPlugin = class extends import_obsidian6.Plugin {
       if (detected) {
         this.settings.gitRemoteUrl = detected;
         await this.saveData(this.settings);
-        new import_obsidian6.Notice("Auto-detected Git remote URL from .git/config");
+        new import_obsidian8.Notice("Auto-detected Git remote URL from .git/config");
       }
     }
     await GitUtils.ensureGitIgnore(this.app);
     const statusBarItemEl = this.addStatusBarItem();
-    this.statusBar = new StatusBar(statusBarItemEl);
+    this.statusBar = new StatusBar(statusBarItemEl, () => this.activateView());
     this.addSettingTab(new VaultSyncSettingTab(this.app, this));
     await this.orchestrator.initialize();
     this.hubClient.connect();
     this.registerEditorExtension(this.collabCompartment.of([]));
     this.registerEvent(
-      this.app.vault.on("modify", async (file) => {
-        if (file instanceof import_obsidian6.TFile && this.isEditable(file)) {
-          const content = await this.app.vault.read(file);
-          await this.crdtManager.updateCrdtFromFile(file.path, content);
-        }
-      })
+      this.app.vault.on("modify", (file) => this.orchestrator.handleFileEvent("modify", file))
+    );
+    this.registerEvent(
+      this.app.vault.on("create", (file) => this.orchestrator.handleFileEvent("create", file))
+    );
+    this.registerEvent(
+      this.app.vault.on("rename", (file, oldPath) => this.orchestrator.handleFileEvent("rename", file, oldPath))
+    );
+    this.registerEvent(
+      this.app.vault.on("delete", (file) => this.orchestrator.handleFileEvent("delete", file))
     );
     this.registerEvent(
       this.app.workspace.on("file-open", async (file) => {
-        if (file instanceof import_obsidian6.TFile && this.isEditable(file)) {
+        if (file instanceof import_obsidian8.TFile && this.isEditable(file)) {
           await this.updateCollabExtension(file);
-        }
-      })
-    );
-    this.registerEvent(
-      this.app.vault.on("rename", (file, oldPath) => {
-        if (file instanceof import_obsidian6.TFile && this.isEditable(file)) {
-          this.crdtManager.releaseDoc(oldPath);
-        }
-      })
-    );
-    this.registerEvent(
-      this.app.vault.on("delete", (file) => {
-        if (file instanceof import_obsidian6.TFile) {
-          this.crdtManager.releaseDoc(file.path);
         }
       })
     );
@@ -50961,7 +51356,7 @@ var VaultSyncPlugin = class extends import_obsidian6.Plugin {
         const file = this.app.workspace.getActiveFile();
         if (file) {
           await this.crdtManager.resetDoc(file.path);
-          new import_obsidian6.Notice(`CRDT state reset for ${file.name}. Reloading...`);
+          new import_obsidian8.Notice(`CRDT state reset for ${file.name}. Reloading...`);
           await this.updateCollabExtension(file);
         }
       }
@@ -50970,10 +51365,19 @@ var VaultSyncPlugin = class extends import_obsidian6.Plugin {
       id: "force-git-sync",
       name: "Force Git Sync (Fetch & Merge)",
       callback: async () => {
-        new import_obsidian6.Notice("Starting Git sync...");
+        new import_obsidian8.Notice("Starting Git sync...");
         await this.orchestrator.forceGitSync();
-        new import_obsidian6.Notice("Git sync complete.");
+        new import_obsidian8.Notice("Git sync complete.");
       }
+    });
+    this.registerView(
+      VIEW_TYPE_SYNC_LOG,
+      (leaf) => new SyncLogView(leaf, this)
+    );
+    this.addCommand({
+      id: "show-sync-log",
+      name: "Show Sync Log",
+      callback: () => this.activateView()
     });
     console.log("Vault Sync Plugin: Successfully loaded.");
   }
@@ -50999,11 +51403,74 @@ var VaultSyncPlugin = class extends import_obsidian6.Plugin {
     this.syncState = state;
     (_a = this.statusBar) == null ? void 0 : _a.update(state);
   }
+  /**
+   * Logs a sync event to the internal buffer.
+   */
+  logSyncEvent(type, message, severity = "info", details, files) {
+    const event = {
+      timestamp: Date.now(),
+      type,
+      message,
+      severity,
+      details,
+      files
+    };
+    this.syncLogs.unshift(event);
+    if (this.syncLogs.length > this.MAX_LOGS) {
+      this.syncLogs.pop();
+    }
+    console.log(`[VaultSync/${type.toUpperCase()}] ${message} (${severity})`);
+    this.app.workspace.trigger("vault-sync:log-update");
+  }
+  async activateView() {
+    const { workspace } = this.app;
+    let leaf = null;
+    const leaves = workspace.getLeavesOfType(VIEW_TYPE_SYNC_LOG);
+    if (leaves.length > 0) {
+      leaf = leaves[0];
+    } else {
+      leaf = workspace.getRightLeaf(false);
+      await leaf.setViewState({
+        type: VIEW_TYPE_SYNC_LOG,
+        active: true
+      });
+    }
+    workspace.revealLeaf(leaf);
+  }
+  /**
+   * Hardening: Self-update mechanism to download latest release from GitHub.
+   */
+  async updatePlugin() {
+    const RELEASE_URL = "https://raw.githubusercontent.com/Prashanth-BC/fieldbook-release/main/real-sync/client/";
+    const files = ["main.js", "manifest.json", "styles.css"];
+    const pluginDir = this.app.vault.configDir + "/plugins/" + this.manifest.id;
+    new import_obsidian8.Notice("Checking for updates...");
+    try {
+      const downloadedFiles = /* @__PURE__ */ new Map();
+      for (const file of files) {
+        const response = await fetch(RELEASE_URL + file, { cache: "no-cache" });
+        if (!response.ok) {
+          throw new Error(`Failed to download ${file}: ${response.statusText}`);
+        }
+        downloadedFiles.set(file, await response.arrayBuffer());
+      }
+      for (const [file, data] of downloadedFiles) {
+        const filePath = pluginDir + "/" + file;
+        await this.app.vault.adapter.writeBinary(filePath, data);
+      }
+      new import_obsidian8.Notice("Vault Sync updated successfully! Please reload the plugin or restart Obsidian.");
+      this.logSyncEvent("info", "Plugin self-updated to latest release version.", "info");
+    } catch (err) {
+      console.error("[VaultSync] Update failed:", err);
+      new import_obsidian8.Notice(`Update failed: ${err.message}`);
+      this.logSyncEvent("error", `Self-update failed: ${err.message}`, "error");
+    }
+  }
   isFileOpen(filePath) {
     let open = false;
     this.app.workspace.iterateAllLeaves((leaf) => {
       var _a;
-      if (leaf.view instanceof import_obsidian6.MarkdownView && ((_a = leaf.view.file) == null ? void 0 : _a.path) === filePath) {
+      if (leaf.view instanceof import_obsidian8.MarkdownView && ((_a = leaf.view.file) == null ? void 0 : _a.path) === filePath) {
         open = true;
       }
     });
@@ -51025,15 +51492,14 @@ var VaultSyncPlugin = class extends import_obsidian6.Plugin {
       let found = false;
       this.app.workspace.iterateAllLeaves((leaf) => {
         var _a;
-        if (leaf.view instanceof import_obsidian6.MarkdownView && leaf.view.file === file) {
+        if (leaf.view instanceof import_obsidian8.MarkdownView && leaf.view.file === file) {
           const editor = leaf.view.editor.cm || ((_a = leaf.view.sourceMode) == null ? void 0 : _a.cmEditor) || leaf.view.editorView;
           if (editor && typeof editor.dispatch === "function") {
             const undoManager = new UndoManager(text2);
             editor.dispatch({
-              effects: this.collabCompartment.reconfigure([])
-            });
-            editor.dispatch({
-              effects: this.collabCompartment.reconfigure(yCollab(text2, awareness, { undoManager }))
+              effects: this.collabCompartment.reconfigure(
+                createYCollabExtension(text2, awareness, undoManager)
+              )
             });
             console.log(`[VaultSync/WebRTC] Applied yCollab to editor for ${file.path}. Content snippet: "${text2.toString().substring(0, 50)}..."`);
             found = true;
@@ -51050,7 +51516,7 @@ var VaultSyncPlugin = class extends import_obsidian6.Plugin {
     const content = await this.app.vault.read(file);
     await this.crdtManager.updateCrdtFromFile(file.path, content);
     await this.updateCollabExtension(file);
-    new import_obsidian6.Notice(`CRDT state rebuilt for ${file.name}`);
+    new import_obsidian8.Notice(`CRDT state rebuilt for ${file.name}`);
   }
 };
 /*! Bundled license information:
