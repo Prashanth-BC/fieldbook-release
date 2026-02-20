@@ -31792,6 +31792,13 @@ var VaultSyncSettingTab = class extends import_obsidian2.PluginSettingTab {
       })
     );
     containerEl.createEl("h3", { text: "Git Configuration" });
+    new import_obsidian2.Setting(containerEl).setName("Git Token (PAT)").setDesc("Personal Access Token for private repositories. Stored locally only.").addText((text2) => {
+      text2.inputEl.type = "password";
+      text2.setPlaceholder("ghp_...").setValue(this.plugin.settings.gitToken || "").onChange(async (value) => {
+        this.plugin.settings.gitToken = value;
+        await this.plugin.saveSettings();
+      });
+    });
     const gitRemoteSetting = new import_obsidian2.Setting(containerEl).setName("Git Remote URL").setDesc("The URL of your GitHub or GitLab repository.").addText((text2) => {
       text2.setPlaceholder("https://github.com/user/repo.git").setValue(this.plugin.settings.gitRemoteUrl).onChange(async (value) => {
         this.plugin.settings.gitRemoteUrl = value;
@@ -38631,12 +38638,20 @@ var GitUtils = class {
       return null;
     }
   }
-  static async fetchAndMerge(app, remoteUrl, branch, crdtManager, isEditable, isFileOpen) {
+  static async fetchAndMerge(app, remoteUrl, branch, crdtManager, isEditable, isFileOpen, token) {
     const fs = createVaultFs(app.vault.adapter);
     const dir = ".";
     try {
       console.log(`[VaultSync/Git] Fetching from ${remoteUrl} [${branch}]...`);
-      await git.fetch({ fs, http: web_default, dir, remote: "origin", ref: branch, singleBranch: true });
+      await git.fetch({
+        fs,
+        http: web_default,
+        dir,
+        remote: "origin",
+        ref: branch,
+        singleBranch: true,
+        onAuth: () => ({ username: token || "" })
+      });
       const headSha = await git.resolveRef({ fs, dir, ref: "HEAD" });
       const fetchHeadSha = await git.resolveRef({ fs, dir, ref: "FETCH_HEAD" });
       if (headSha === fetchHeadSha) {
@@ -38701,14 +38716,15 @@ var GitUtils = class {
       console.error("[VaultSync/Git] Failed to fetch and merge", e);
     }
   }
-  static async push(app, remoteUrl, branch) {
+  static async push(app, remoteUrl, branch, token) {
     const fs = createVaultFs(app.vault.adapter);
     await git.push({
       fs,
       http: web_default,
       dir: ".",
       remote: "origin",
-      ref: branch
+      ref: branch,
+      onAuth: () => ({ username: token || "" })
     });
     console.log("[VaultSync/Git] Pushed changes to remote");
     return true;
@@ -38925,7 +38941,12 @@ var SyncOrchestrator = class {
         if (sha && this.plugin.settings.gitRemoteUrl) {
           try {
             this.plugin.logSyncEvent("push", "Pushing changes to remote", "info", `SHA: ${sha}`);
-            await GitUtils.push(this.plugin.app, this.plugin.settings.gitRemoteUrl, this.plugin.settings.gitBranch);
+            await GitUtils.push(
+              this.plugin.app,
+              this.plugin.settings.gitRemoteUrl,
+              this.plugin.settings.gitBranch,
+              this.plugin.settings.gitToken
+            );
             this.setState({ status: "synced" });
           } catch (e) {
             if (e.name === "PushRejectedError") {
@@ -39013,7 +39034,8 @@ var SyncOrchestrator = class {
           const ext = (_a = path2.split(".").pop()) == null ? void 0 : _a.toLowerCase();
           return ext === "md" || ext === "json" || ext === "canvas";
         },
-        (path2) => this.plugin.isFileOpen(path2)
+        (path2) => this.plugin.isFileOpen(path2),
+        this.plugin.settings.gitToken
       );
       this.lastFetchTimestamp = Date.now();
       this.setState({ status: "synced" });
@@ -51269,6 +51291,7 @@ var import_state = require("@codemirror/state");
 var DEFAULT_SETTINGS = {
   syncHubUrl: "",
   sharedSecret: "",
+  gitToken: "",
   deviceName: "Unknown Device",
   vaultId: "",
   gitRemoteUrl: "",
@@ -51407,19 +51430,31 @@ var VaultSyncPlugin = class extends import_obsidian8.Plugin {
    * Logs a sync event to the internal buffer.
    */
   logSyncEvent(type, message, severity = "info", details, files) {
+    const scrub = (text2) => {
+      if (!text2)
+        return text2;
+      let scrubbed = text2;
+      if (this.settings.sharedSecret) {
+        scrubbed = scrubbed.split(this.settings.sharedSecret).join("[REDACTED_SECRET]");
+      }
+      if (this.settings.gitToken) {
+        scrubbed = scrubbed.split(this.settings.gitToken).join("[REDACTED_TOKEN]");
+      }
+      return scrubbed;
+    };
     const event = {
       timestamp: Date.now(),
       type,
-      message,
+      message: scrub(message),
       severity,
-      details,
+      details: scrub(details),
       files
     };
     this.syncLogs.unshift(event);
     if (this.syncLogs.length > this.MAX_LOGS) {
       this.syncLogs.pop();
     }
-    console.log(`[VaultSync/${type.toUpperCase()}] ${message} (${severity})`);
+    console.log(`[VaultSync/${type.toUpperCase()}] ${event.message} (${severity})`);
     this.app.workspace.trigger("vault-sync:log-update");
   }
   async activateView() {
