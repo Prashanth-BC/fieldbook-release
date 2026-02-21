@@ -28472,7 +28472,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
         throw err;
       }
     }
-    async function writeRef({
+    async function writeRef2({
       fs: _fs,
       dir,
       gitdir = join(dir, ".git"),
@@ -28632,7 +28632,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
       writeBlob,
       writeCommit,
       writeObject,
-      writeRef,
+      writeRef: writeRef2,
       writeTag,
       writeTree,
       stash
@@ -28706,7 +28706,7 @@ ${obj.gpgsig ? obj.gpgsig : ""}`;
     exports.writeBlob = writeBlob;
     exports.writeCommit = writeCommit;
     exports.writeObject = writeObject;
-    exports.writeRef = writeRef;
+    exports.writeRef = writeRef2;
     exports.writeTag = writeTag;
     exports.writeTree = writeTree;
   }
@@ -31656,7 +31656,6 @@ var StatusBar = class {
     this.el.onclick = onClick;
   }
   update(state) {
-    var _a, _b;
     this.el.empty();
     const iconEl = this.el.createSpan({ cls: "status-bar-item-icon" });
     switch (state.status) {
@@ -31698,7 +31697,15 @@ var StatusBar = class {
         (0, import_obsidian.setIcon)(iconEl, "alert-triangle");
         this.el.addClass("is-error");
         this.el.removeClass("is-synced", "is-syncing", "is-offline", "is-reconnecting");
-        (0, import_obsidian.setTooltip)(this.el, `Vault Sync: Error \u2014 ${(_b = (_a = state.error) == null ? void 0 : _a.message) != null ? _b : "Unknown error"}`);
+        let msg = "Unknown error";
+        if (state.error) {
+          if ("message" in state.error) {
+            msg = state.error.message;
+          } else if ("cause" in state.error) {
+            msg = state.error.cause;
+          }
+        }
+        (0, import_obsidian.setTooltip)(this.el, `Vault Sync: Error \u2014 ${msg}`);
         break;
     }
   }
@@ -36013,7 +36020,9 @@ var CrdtUpdateSchema = external_exports.object({
 });
 var CrdtStateRequestSchema = external_exports.object({
   type: external_exports.literal("crdt_state_request"),
-  file: external_exports.string()
+  file: external_exports.string(),
+  stateVector: external_exports.instanceof(Uint8Array).optional()
+  // Yjs state vector summary
 });
 var CrdtFullStateSchema = external_exports.object({
   type: external_exports.literal("crdt_full_state"),
@@ -38421,7 +38430,7 @@ var obsidianHttp = {
     try {
       const params2 = {
         url,
-        method,
+        method: method || "GET",
         headers,
         body: requestBody,
         throw: false
@@ -38430,7 +38439,7 @@ var obsidianHttp = {
       const response = await (0, import_obsidian4.requestUrl)(params2);
       return {
         url,
-        method,
+        method: method || "GET",
         statusCode: response.status,
         statusMessage: "OK",
         // requestUrl doesn't provide statusMessage, but standard says OK is fine
@@ -38697,11 +38706,12 @@ var GitUtils = class {
           console.log(`[VaultSync/Git] Updated binary file from remote: ${filepath}`);
         }
       }
-      await git.updateRef({
+      await git.writeRef({
         fs,
         dir,
         ref: `refs/heads/${branch}`,
-        value: fetchHeadSha
+        value: fetchHeadSha,
+        force: true
       });
       console.log(`[VaultSync/Git] Fast-forwarded ${branch} to ${fetchHeadSha}`);
     } catch (e) {
@@ -38942,7 +38952,7 @@ var SyncOrchestrator = class {
             this.setState({ status: "synced" });
           } catch (e) {
             if (e.name === "PushRejectedError") {
-              this.plugin.logSyncEvent("warn", "Git push rejected (Non-Fast-Forward). Starting auto-reconciliation...", "warn");
+              this.plugin.logSyncEvent("alert", "Git push rejected (Non-Fast-Forward). Starting auto-reconciliation...", "warn");
               await this.handleReconnect();
             } else {
               throw e;
@@ -38953,9 +38963,10 @@ var SyncOrchestrator = class {
         }
       }
     } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
       console.error("[VaultSync] Auto-commit failed", e);
-      this.plugin.logSyncEvent("error", "Auto-commit failed", "error", e.message);
-      this.setState({ status: "error", error: { kind: "git", message: "Auto-commit failed" } });
+      this.plugin.logSyncEvent("error", "Auto-commit failed", "error", message);
+      this.setState({ status: "error", error: { kind: "git", operation: "auto-commit", message } });
     }
   }
   async handleReconnect() {
@@ -38984,9 +38995,10 @@ var SyncOrchestrator = class {
       this.plugin.logSyncEvent("pull", "Reconnection sequence complete", "info");
       this.setState({ status: "synced" });
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
       console.error("[VaultSync/Reconnect] Sequence failed:", err);
-      this.plugin.logSyncEvent("error", "Reconnection sequence failed", "error", err.message);
-      this.setState({ status: "error", error: { kind: "network", message: "Reconnection sequence failed" } });
+      this.plugin.logSyncEvent("error", "Reconnection sequence failed", "error", message);
+      this.setState({ status: "error", error: { kind: "network", endpoint: "reconnect", cause: message } });
       this.startHeartbeat();
     } finally {
       this.isTransitioning = false;
@@ -39033,11 +39045,12 @@ var SyncOrchestrator = class {
       this.setState({ status: "synced" });
       this.plugin.logSyncEvent("pull", "Background Git sync complete", "info");
     } catch (error) {
-      this.plugin.logSyncEvent("error", "Git sync failed", "error", error.message);
+      const message = error instanceof Error ? error.message : String(error);
+      this.plugin.logSyncEvent("error", "Git sync failed", "error", message);
       console.error("[VaultSync] Git sync failed", error);
       this.setState({
         status: "error",
-        error: { kind: "network", message: "Git sync failed" }
+        error: { kind: "network", endpoint: "fetch", cause: message }
       });
     }
   }
@@ -50138,9 +50151,14 @@ var ClientCrdtManager = class {
     await new Promise((resolve2) => {
       persistence.once("synced", () => resolve2());
     });
-    const hubState = await this.plugin.hubClient.requestFullState(filePath);
+    console.log(`[VaultSync/CRDT] Requesting catch-up from Sync Hub for ${filePath}`);
+    const stateVector = encodeStateVector(doc2);
+    const hubState = await this.plugin.hubClient.requestFullState(filePath, stateVector);
     if (hubState && hubState.length > 0) {
       applyUpdate(doc2, hubState, "sync-hub");
+      console.log(`[VaultSync/CRDT] Catch-up complete from Sync Hub for ${filePath}`);
+    } else {
+      console.log(`[VaultSync/CRDT] No state found on Hub for ${filePath} or Hub unreachable.`);
     }
     await this.bootstrapDoc(filePath, doc2, persistence);
     return doc2;
@@ -50163,7 +50181,8 @@ var ClientCrdtManager = class {
         const doc2 = this.docs.get(filePath);
         if (!doc2)
           return;
-        const hubState = await this.plugin.hubClient.requestFullState(filePath);
+        const stateVector = encodeStateVector(doc2);
+        const hubState = await this.plugin.hubClient.requestFullState(filePath, stateVector);
         if (hubState && hubState.length > 0) {
           applyUpdate(doc2, hubState, "sync-hub");
           console.log(`[VaultSync/CRDT] Caught up: ${filePath}`);
@@ -50647,13 +50666,14 @@ var HubClient = class {
     this.ws.send(data);
     console.log(`[VaultSync/WS] Update broadcast  path=${file}  bytes=${data.byteLength}`);
   }
-  async requestFullState(file) {
+  async requestFullState(file, stateVector) {
     if (!this.ws || !this.authenticated || this.ws.readyState !== WebSocket.OPEN) {
       return null;
     }
     const req = {
       type: "crdt_state_request",
-      file
+      file,
+      stateVector
     };
     return new Promise((resolve2) => {
       this.pendingRequests.set(file, resolve2);
@@ -51267,7 +51287,7 @@ var yCollab = (ytext, awareness, { undoManager = new UndoManager(ytext) } = {}) 
 
 // src/ui/editor/collab.ts
 function createYCollabExtension(ytext, awareness, undoManager) {
-  return yCollab(ytext, awareness, { undoManager });
+  return yCollab(ytext, awareness, { undoManager: undoManager != null ? undoManager : false });
 }
 
 // src/main.ts
@@ -51449,12 +51469,16 @@ var VaultSyncPlugin = class extends import_obsidian9.Plugin {
       leaf = leaves[0];
     } else {
       leaf = workspace.getRightLeaf(false);
-      await leaf.setViewState({
-        type: VIEW_TYPE_SYNC_LOG,
-        active: true
-      });
+      if (leaf) {
+        await leaf.setViewState({
+          type: VIEW_TYPE_SYNC_LOG,
+          active: true
+        });
+      }
     }
-    workspace.revealLeaf(leaf);
+    if (leaf) {
+      workspace.revealLeaf(leaf);
+    }
   }
   /**
    * Hardening: Self-update mechanism to download latest release from GitHub.
@@ -51478,11 +51502,12 @@ var VaultSyncPlugin = class extends import_obsidian9.Plugin {
         await this.app.vault.adapter.writeBinary(filePath, data);
       }
       new import_obsidian9.Notice("Vault Sync updated successfully! Please reload the plugin or restart Obsidian.");
-      this.logSyncEvent("info", "Plugin self-updated to latest release version.", "info");
+      this.logSyncEvent("alert", "Plugin self-updated to latest release version.", "info");
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
       console.error("[VaultSync] Update failed:", err);
-      new import_obsidian9.Notice(`Update failed: ${err.message}`);
-      this.logSyncEvent("error", `Self-update failed: ${err.message}`, "error");
+      new import_obsidian9.Notice(`Update failed: ${message}`);
+      this.logSyncEvent("error", `Self-update failed: ${message}`, "error");
     }
   }
   isFileOpen(filePath) {
