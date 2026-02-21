@@ -31858,6 +31858,38 @@ var VaultSyncSettingTab = class extends import_obsidian2.PluginSettingTab {
         }
       })
     );
+    containerEl.createEl("h3", { text: "Advanced Settings" });
+    new import_obsidian2.Setting(containerEl).setName("CRDT In-Memory Cache Size").setDesc("Maximum number of documents to keep in memory simultaneously. Higher values improve switching speed but use more RAM.").addSlider(
+      (slider) => slider.setLimits(10, 500, 10).setValue(this.plugin.settings.crdtMaxDocs).setDynamicTooltip().onChange(async (value) => {
+        this.plugin.settings.crdtMaxDocs = value;
+        await this.plugin.saveSettings();
+      })
+    );
+    containerEl.createEl("h3", { text: "Danger Zone", cls: "vault-sync-danger-heading" });
+    new import_obsidian2.Setting(containerEl).setName("Purge Local CRDT Cache").setDesc("Wipes all persistent CRDT state for THIS vault from IndexedDB. Use this if your local state is corrupted. Does NOT affect the server or Git.").addButton(
+      (button) => button.setButtonText("Purge Cache").setWarning().onClick(async () => {
+        const confirm = window.confirm(
+          "DANGER: This will delete all local CRDT cache for this vault. Un-synced local changes might be lost. Proceed?"
+        );
+        if (confirm) {
+          await this.plugin.crdtManager.purgeVaultCache();
+          new import_obsidian2.Notice("Local CRDT cache purged. Reloading plugin...");
+          this.app.plugins.disablePlugin(this.plugin.manifest.id);
+          this.app.plugins.enablePlugin(this.plugin.manifest.id);
+        }
+      })
+    );
+    new import_obsidian2.Setting(containerEl).setName("Reset Git Identity").setDesc("Deletes the local .git directory and re-initializes it. Use this if your Git history is broken or you want to start fresh. This will NOT delete your notes.").addButton(
+      (button) => button.setButtonText("Reset Git").setWarning().onClick(async () => {
+        const confirm = window.confirm(
+          "DANGER: This will delete the hidden .git folder in your vault and start a fresh history. Proceed?"
+        );
+        if (confirm) {
+          await GitUtils.resetRepository(this.plugin.app);
+          new import_obsidian2.Notice("Git repository reset and re-initialized.");
+        }
+      })
+    );
   }
   hide() {
     var _a;
@@ -38581,7 +38613,7 @@ function createVaultFs(adapter) {
 }
 
 // src/utils/git-utils.ts
-var GitUtils = class {
+var GitUtils2 = class {
   static async initRepo(app) {
     const fs = createVaultFs(app.vault.adapter);
     try {
@@ -38718,6 +38750,21 @@ var GitUtils = class {
       console.error("[VaultSync/Git] Failed to fetch and merge", e);
     }
   }
+  static async resetRepository(app) {
+    try {
+      const adapter = app.vault.adapter;
+      if (await adapter.exists(".git")) {
+        console.log("[VaultSync/Git] Removing local .git directory...");
+        await adapter.remove(".git");
+      }
+      await this.initRepo(app);
+      await this.ensureGitIgnore(app);
+      console.log("[VaultSync/Git] Repository reset complete.");
+    } catch (e) {
+      console.error("[VaultSync/Git] Failed to reset repository", e);
+      throw e;
+    }
+  }
   static async push(app, remoteUrl, branch, token) {
     const fs = createVaultFs(app.vault.adapter);
     await git.push({
@@ -38819,8 +38866,8 @@ var SyncOrchestrator = class {
     console.log("[VaultSync] Initializing SyncOrchestrator...");
     window.addEventListener("online", this.onOnline);
     window.addEventListener("offline", this.onOffline);
-    await GitUtils.initRepo(this.plugin.app);
-    await GitUtils.ensureGitIgnore(this.plugin.app);
+    await GitUtils2.initRepo(this.plugin.app);
+    await GitUtils2.ensureGitIgnore(this.plugin.app);
     const signalingUrl = this.plugin.signalingManager.getSignalingUrl();
     if (signalingUrl) {
       this.plugin.signalingManager.reportStatus("connected");
@@ -38934,16 +38981,16 @@ var SyncOrchestrator = class {
       return;
     }
     try {
-      const status = await GitUtils.getStatus(this.plugin.app);
+      const status = await GitUtils2.getStatus(this.plugin.app);
       const changedFiles = status.filter((row) => row[1] !== 1 || row[2] !== 1 || row[3] !== 1).map((row) => row[0]);
       if (changedFiles.length > 0) {
         this.setState({ status: "syncing", progress: 0 });
         this.plugin.logSyncEvent("commit", `Auto-committing ${changedFiles.length} files`, "info", void 0, changedFiles);
-        const sha = await GitUtils.commit(this.plugin.app, this.plugin.settings.deviceName, changedFiles);
+        const sha = await GitUtils2.commit(this.plugin.app, this.plugin.settings.deviceName, changedFiles);
         if (sha && this.plugin.settings.gitRemoteUrl) {
           try {
             this.plugin.logSyncEvent("push", "Pushing changes to remote", "info", `SHA: ${sha}`);
-            await GitUtils.push(
+            await GitUtils2.push(
               this.plugin.app,
               this.plugin.settings.gitRemoteUrl,
               this.plugin.settings.gitBranch,
@@ -39028,7 +39075,7 @@ var SyncOrchestrator = class {
     this.setState({ status: "syncing", progress: 0 });
     try {
       this.plugin.logSyncEvent("pull", "Starting background Git sync", "info");
-      await GitUtils.fetchAndMerge(
+      await GitUtils2.fetchAndMerge(
         this.plugin.app,
         this.plugin.settings.gitRemoteUrl,
         this.plugin.settings.gitBranch,
@@ -50072,7 +50119,6 @@ var ClientCrdtManager = class {
     __publicField(this, "debounceTimers", /* @__PURE__ */ new Map());
     __publicField(this, "lastSyncHash", /* @__PURE__ */ new Map());
     __publicField(this, "fallbackMonitoringTimers", /* @__PURE__ */ new Map());
-    __publicField(this, "MAX_DOCS", 50);
     this.plugin = plugin;
   }
   async getDoc(filePath) {
@@ -50315,10 +50361,34 @@ var ClientCrdtManager = class {
     }
     await this.getDoc(filePath);
   }
+  /**
+   * Danger Zone: Purges all local IndexedDB state for the current vault.
+   */
+  async purgeVaultCache() {
+    const vaultId = this.plugin.settings.vaultId || "default";
+    const prefix = `vault-sync/${vaultId}/`;
+    console.log(`[VaultSync/CRDT] Purging all cache for vault: ${vaultId}`);
+    this.destroy();
+    try {
+      if ("databases" in indexedDB) {
+        const dbs = await indexedDB.databases();
+        for (const db of dbs) {
+          if (db.name && db.name.startsWith(prefix)) {
+            console.log(`[VaultSync/CRDT] Deleting database: ${db.name}`);
+            indexedDB.deleteDatabase(db.name);
+          }
+        }
+      } else {
+        console.warn("[VaultSync/CRDT] indexedDB.databases() not supported. Manual cleanup required.");
+      }
+    } catch (err) {
+      console.error("[VaultSync/CRDT] Failed to purge IndexedDB cache:", err);
+    }
+  }
   updateLru(filePath) {
     this.lru = this.lru.filter((p) => p !== filePath);
     this.lru.push(filePath);
-    if (this.lru.length > this.MAX_DOCS) {
+    if (this.lru.length > this.plugin.settings.crdtMaxDocs) {
       const oldest = this.lru.shift();
       if (oldest) {
         console.log(`[VaultSync/CRDT] Doc evicted  path=${oldest}  reason=lru_cap`);
@@ -51302,7 +51372,8 @@ var DEFAULT_SETTINGS = {
   gitBranch: "main",
   autoCommitIntervalMin: 5,
   autoPullIntervalMin: 5,
-  allowGitOnCellular: false
+  allowGitOnCellular: false,
+  crdtMaxDocs: 50
 };
 var VaultSyncPlugin = class extends import_obsidian9.Plugin {
   constructor(app, manifest) {
@@ -51329,14 +51400,14 @@ var VaultSyncPlugin = class extends import_obsidian9.Plugin {
     console.log("Vault Sync Plugin: Starting initialization...");
     await this.loadSettings();
     if (!this.settings.gitRemoteUrl) {
-      const detected = await GitUtils.detectRemoteUrl(this.app);
+      const detected = await GitUtils2.detectRemoteUrl(this.app);
       if (detected) {
         this.settings.gitRemoteUrl = detected;
         await this.saveData(this.settings);
         new import_obsidian9.Notice("Auto-detected Git remote URL from .git/config");
       }
     }
-    await GitUtils.ensureGitIgnore(this.app);
+    await GitUtils2.ensureGitIgnore(this.app);
     const statusBarItemEl = this.addStatusBarItem();
     this.statusBar = new StatusBar(statusBarItemEl, () => this.activateView());
     this.addSettingTab(new VaultSyncSettingTab(this.app, this));

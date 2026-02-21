@@ -63,3 +63,10 @@
     color: var(--text-success);
     font-weight: bold;
 }
+
+.vault-sync-danger-heading {
+    color: var(--text-error);
+    margin-top: 2em;
+    border-bottom: 1px solid var(--text-error);
+    padding-bottom: 0.5em;
+}
