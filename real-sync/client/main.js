@@ -36062,6 +36062,11 @@ var CrdtFullStateSchema = external_exports.object({
   state: external_exports.instanceof(Uint8Array)
   // Yjs full state snapshot
 });
+var CrdtCheckpointSchema = external_exports.object({
+  type: external_exports.literal("crdt_checkpoint"),
+  sha: external_exports.string(),
+  files: external_exports.array(external_exports.string())
+});
 var AlertSchema = external_exports.object({
   type: external_exports.literal("alert"),
   kind: external_exports.enum(["low_disk_space", "critical_disk_space", "sync_error"]),
@@ -36075,6 +36080,7 @@ var ProtocolMessageSchema = external_exports.discriminatedUnion("type", [
   CrdtUpdateSchema,
   CrdtStateRequestSchema,
   CrdtFullStateSchema,
+  CrdtCheckpointSchema,
   AlertSchema
 ]);
 
@@ -38997,6 +39003,9 @@ var SyncOrchestrator = class {
               this.plugin.settings.gitToken
             );
             this.setState({ status: "synced" });
+            if (success) {
+              this.plugin.hubClient.sendCheckpoint(sha, changedFiles);
+            }
           } catch (e) {
             if (e.name === "PushRejectedError") {
               this.plugin.logSyncEvent("alert", "Git push rejected (Non-Fast-Forward). Starting auto-reconciliation...", "warn");
@@ -50735,6 +50744,18 @@ var HubClient = class {
     const data = serializeMessage(msg);
     this.ws.send(data);
     console.log(`[VaultSync/WS] Update broadcast  path=${file}  bytes=${data.byteLength}`);
+  }
+  async sendCheckpoint(sha, files) {
+    if (!this.ws || !this.authenticated || this.ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    const msg = {
+      type: "crdt_checkpoint",
+      sha,
+      files
+    };
+    this.ws.send(serializeMessage(msg));
+    console.log(`[VaultSync/WS] Checkpoint sent  sha=${sha}  files=${files.length}`);
   }
   async requestFullState(file, stateVector) {
     if (!this.ws || !this.authenticated || this.ws.readyState !== WebSocket.OPEN) {
